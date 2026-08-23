@@ -13,7 +13,7 @@ export const authenticate = async (req , res , next) => {
 
         // Verify the token using your secret key from .env
         // If it's tampered with or expired, this will throw an error to the catch block
-        const decodedPayload = jwt.verify(token , proccess.env.JWT_SECRET);
+        const decodedPayload = jwt.verify(token , process.env.JWT_SECRET);
 
 
         //Attach the decoded user data to the Express 'req' object
