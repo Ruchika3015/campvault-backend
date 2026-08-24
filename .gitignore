@@ -42,3 +42,4 @@ Thumbs.db
 
 # Docker local data overrides (if applicable)
 .docker/campusjugaad_backup.dump 
+campusjugaad_backup.dump 
