@@ -41,4 +41,4 @@ Thumbs.db
 .env.production.local
 
 # Docker local data overrides (if applicable)
-.docker/
+.docker/campusjugaad_backup.dump 
