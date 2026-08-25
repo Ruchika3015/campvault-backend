@@ -63,6 +63,7 @@ export const register = async (req, res, next) => {
     }
 };
 
+
 // ================================================================
 // LOGIN
 // ================================================================
@@ -117,6 +118,7 @@ export const login = async (req, res, next) => {
     }
 };
 
+
 // ================================================================
 // GET PROFILE
 // ================================================================
@@ -131,6 +133,7 @@ export const getProfile = async (req, res, next) => {
         return next(error);
     }
 };
+
 
 // ================================================================
 // UPDATE PROFILE
@@ -193,6 +196,105 @@ export const updateProfile = async (req, res, next) => {
             success: true,
             message: 'Profile updated successfully',
             data: updatedUser
+        });
+    } catch (error) {
+        return next(error);
+    }
+};
+
+
+// ================================================================
+// SKILLS
+// ================================================================
+
+export const getSkills = async (req, res, next) => {
+    try {
+        const skills =
+            await userService.getSkills(req.user.id);
+
+        return res.status(200).json({
+            success: true,
+            data: skills
+        });
+    } catch (error) {
+        return next(error);
+    }
+};
+
+
+export const addSkill = async (req, res, next) => {
+    try {
+        const skill =
+            await userService.addSkill(
+                req.user.id,
+                req.body
+            );
+
+        return res.status(201).json({
+            success: true,
+            message: 'Skill added successfully.',
+            data: skill
+        });
+    } catch (error) {
+        return next(error);
+    }
+};
+
+
+export const updateSkill = async (req, res, next) => {
+    try {
+        const skillId =
+            Number(req.params.id);
+
+        if (
+            !Number.isInteger(skillId) ||
+            skillId <= 0
+        ) {
+            return res.status(400).json({
+                error: 'Invalid skill ID.'
+            });
+        }
+
+        const skill =
+            await userService.updateSkill(
+                req.user.id,
+                skillId,
+                req.body
+            );
+
+        return res.status(200).json({
+            success: true,
+            message: 'Skill updated successfully.',
+            data: skill
+        });
+    } catch (error) {
+        return next(error);
+    }
+};
+
+
+export const deleteSkill = async (req, res, next) => {
+    try {
+        const skillId =
+            Number(req.params.id);
+
+        if (
+            !Number.isInteger(skillId) ||
+            skillId <= 0
+        ) {
+            return res.status(400).json({
+                error: 'Invalid skill ID.'
+            });
+        }
+
+        await userService.deleteSkill(
+            req.user.id,
+            skillId
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: 'Skill deleted successfully.'
         });
     } catch (error) {
         return next(error);

@@ -1,5 +1,10 @@
 import pool from '../config/db.js';
 
+
+// ================================================================
+// USERS
+// ================================================================
+
 export const findUserByEmail = async (email) => {
     const query = `
         SELECT *
@@ -11,6 +16,7 @@ export const findUserByEmail = async (email) => {
 
     return rows[0];
 };
+
 
 export const createUser = async (userData) => {
     const {
@@ -58,7 +64,11 @@ export const createUser = async (userData) => {
     return rows[0];
 };
 
-export const updateUserProfile = async (userId, userData) => {
+
+export const updateUserProfile = async (
+    userId,
+    userData
+) => {
     const {
         name,
         email,
@@ -95,6 +105,139 @@ export const updateUserProfile = async (userId, userData) => {
     ];
 
     const { rows } = await pool.query(query, values);
+
+    return rows[0];
+};
+
+
+// ================================================================
+// SKILLS
+// ================================================================
+
+export const getSkillsByUserId = async (userId) => {
+    const query = `
+        SELECT
+            id,
+            name,
+            category,
+            level,
+            created_at,
+            updated_at
+        FROM user_skills
+        WHERE user_id = $1
+        ORDER BY created_at DESC;
+    `;
+
+    const { rows } = await pool.query(query, [userId]);
+
+    return rows;
+};
+
+
+export const createSkill = async (
+    userId,
+    skillData
+) => {
+    const {
+        name,
+        category,
+        level
+    } = skillData;
+
+    const query = `
+        INSERT INTO user_skills (
+            user_id,
+            name,
+            category,
+            level
+        )
+        VALUES ($1, $2, $3, $4)
+        RETURNING
+            id,
+            name,
+            category,
+            level,
+            created_at,
+            updated_at;
+    `;
+
+    const values = [
+        userId,
+        name,
+        category || null,
+        level || null
+    ];
+
+    const { rows } = await pool.query(
+        query,
+        values
+    );
+
+    return rows[0];
+};
+
+
+export const updateSkill = async (
+    userId,
+    skillId,
+    skillData
+) => {
+    const {
+        name,
+        category,
+        level
+    } = skillData;
+
+    const query = `
+        UPDATE user_skills
+        SET
+            name = $1,
+            category = $2,
+            level = $3,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE id = $4
+          AND user_id = $5
+        RETURNING
+            id,
+            name,
+            category,
+            level,
+            created_at,
+            updated_at;
+    `;
+
+    const values = [
+        name,
+        category || null,
+        level || null,
+        skillId,
+        userId
+    ];
+
+    const { rows } = await pool.query(
+        query,
+        values
+    );
+
+    return rows[0];
+};
+
+
+export const deleteSkill = async (
+    userId,
+    skillId
+) => {
+    const query = `
+        DELETE FROM user_skills
+        WHERE id = $1
+          AND user_id = $2
+        RETURNING id;
+    `;
+
+    const { rows } = await pool.query(
+        query,
+        [skillId, userId]
+    );
 
     return rows[0];
 };

@@ -21,9 +21,10 @@ export const registerUser = async (userData) => {
 
     const normalizedEmail = email.toLowerCase().trim();
 
-    // Check if user already exists
     const existingUser =
-        await userRepository.findUserByEmail(normalizedEmail);
+        await userRepository.findUserByEmail(
+            normalizedEmail
+        );
 
     if (existingUser) {
         const error = new Error(
@@ -34,9 +35,10 @@ export const registerUser = async (userData) => {
         throw error;
     }
 
-    // Make sure the selected college exists
     const existingCollege =
-        await collegeRepository.findCollegeById(college_id);
+        await collegeRepository.findCollegeById(
+            college_id
+        );
 
     if (!existingCollege) {
         const error = new Error(
@@ -47,11 +49,9 @@ export const registerUser = async (userData) => {
         throw error;
     }
 
-    // Hash password
     const passwordHash =
         await bcrypt.hash(password, 10);
 
-    // Create user
     const newUser =
         await userRepository.createUser({
             name,
@@ -80,13 +80,11 @@ export const loginUser = async (loginData) => {
     const normalizedEmail =
         email.toLowerCase().trim();
 
-    // Find user by email
     const user =
         await userRepository.findUserByEmail(
             normalizedEmail
         );
 
-    // User does not exist
     if (!user) {
         return {
             success: false,
@@ -94,7 +92,6 @@ export const loginUser = async (loginData) => {
         };
     }
 
-    // Compare password with stored hash
     const passwordMatches =
         await bcrypt.compare(
             password,
@@ -108,7 +105,6 @@ export const loginUser = async (loginData) => {
         };
     }
 
-    // Create JWT
     const token =
         jwt.sign(
             {
@@ -122,7 +118,6 @@ export const loginUser = async (loginData) => {
             }
         );
 
-    // Do not send password hash to frontend
     const safeUser = {
         id: user.id,
         name: user.name,
@@ -160,7 +155,6 @@ export const updateUserProfile = async (
     const normalizedEmail =
         email.toLowerCase().trim();
 
-    // Check whether the email belongs to another user
     const existingUser =
         await userRepository.findUserByEmail(
             normalizedEmail
@@ -178,7 +172,6 @@ export const updateUserProfile = async (
         throw error;
     }
 
-    // Make sure the selected college exists
     const existingCollege =
         await collegeRepository.findCollegeById(
             college_id
@@ -193,7 +186,6 @@ export const updateUserProfile = async (
         throw error;
     }
 
-    // Update the user
     const updatedUser =
         await userRepository.updateUserProfile(
             userId,
@@ -216,4 +208,128 @@ export const updateUserProfile = async (
     }
 
     return updatedUser;
+};
+
+
+// ================================================================
+// SKILLS
+// ================================================================
+
+export const getSkills = async (userId) => {
+    return await userRepository.getSkillsByUserId(
+        userId
+    );
+};
+
+
+export const addSkill = async (
+    userId,
+    skillData
+) => {
+    const name =
+        skillData.name?.trim();
+
+    if (!name) {
+        const error = new Error(
+            'Skill name is required.'
+        );
+
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (name.length > 100) {
+        const error = new Error(
+            'Skill name is too long.'
+        );
+
+        error.statusCode = 400;
+        throw error;
+    }
+
+    return await userRepository.createSkill(
+        userId,
+        {
+            name,
+            category:
+                skillData.category?.trim() || null,
+            level:
+                skillData.level?.trim() || null
+        }
+    );
+};
+
+
+export const updateSkill = async (
+    userId,
+    skillId,
+    skillData
+) => {
+    const name =
+        skillData.name?.trim();
+
+    if (!name) {
+        const error = new Error(
+            'Skill name is required.'
+        );
+
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (name.length > 100) {
+        const error = new Error(
+            'Skill name is too long.'
+        );
+
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const updatedSkill =
+        await userRepository.updateSkill(
+            userId,
+            skillId,
+            {
+                name,
+                category:
+                    skillData.category?.trim() || null,
+                level:
+                    skillData.level?.trim() || null
+            }
+        );
+
+    if (!updatedSkill) {
+        const error = new Error(
+            'Skill not found.'
+        );
+
+        error.statusCode = 404;
+        throw error;
+    }
+
+    return updatedSkill;
+};
+
+
+export const deleteSkill = async (
+    userId,
+    skillId
+) => {
+    const deletedSkill =
+        await userRepository.deleteSkill(
+            userId,
+            skillId
+        );
+
+    if (!deletedSkill) {
+        const error = new Error(
+            'Skill not found.'
+        );
+
+        error.statusCode = 404;
+        throw error;
+    }
+
+    return deletedSkill;
 };
