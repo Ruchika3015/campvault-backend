@@ -177,29 +177,45 @@ export const createProposal = async ({
 
 export const findProposalById = async (id) => {
     const query = `
-        SELECT 
+        SELECT
             p.*,
             j.title AS jugaad_title,
             j.poster_id,
             j.budget AS original_budget,
             j.status AS jugaad_status,
+
             helper.name AS helper_name,
             helper.email AS helper_email,
             helper.number AS helper_number,
             helper.location AS helper_location,
+
             poster.name AS poster_name,
-            poster.email AS poster_email
+            poster.email AS poster_email,
+
+            c.id AS conversation_id
+
         FROM jugaad_proposals p
+
         JOIN jugaads j
             ON j.id = p.jugaad_id
+
         JOIN users helper
             ON helper.id = p.helper_id
+
         JOIN users poster
             ON poster.id = j.poster_id
+
+        LEFT JOIN conversations c
+            ON c.proposal_id = p.id
+            AND c.jugaad_id = p.jugaad_id
+
         WHERE p.id = $1;
     `;
 
-    const { rows } = await pool.query(query, [id]);
+    const { rows } = await pool.query(
+        query,
+        [id]
+    );
 
     return rows[0];
 };
@@ -222,7 +238,10 @@ export const findProposalByJugaadAndHelper = async (
 
     const { rows } = await pool.query(
         query,
-        [jugaadId, helperId]
+        [
+            jugaadId,
+            helperId
+        ]
     );
 
     return rows[0];
@@ -235,7 +254,7 @@ export const findProposalByJugaadAndHelper = async (
 
 export const findProposalsByJugaadId = async (jugaadId) => {
     const query = `
-        SELECT 
+        SELECT
             p.id,
             p.jugaad_id,
             p.helper_id,
@@ -251,6 +270,8 @@ export const findProposalsByJugaadId = async (jugaadId) => {
             helper.number AS helper_number,
             helper.location AS helper_location,
 
+            c.id AS conversation_id,
+
             co.amount AS latest_counter_amount,
             co.message AS latest_counter_message,
             co.offered_by AS latest_counter_offered_by,
@@ -260,6 +281,10 @@ export const findProposalsByJugaadId = async (jugaadId) => {
 
         JOIN users helper
             ON helper.id = p.helper_id
+
+        LEFT JOIN conversations c
+            ON c.proposal_id = p.id
+            AND c.jugaad_id = p.jugaad_id
 
         LEFT JOIN LATERAL (
             SELECT
@@ -293,7 +318,7 @@ export const findProposalsByJugaadId = async (jugaadId) => {
 
 export const findMyProposals = async (helperId) => {
     const query = `
-        SELECT 
+        SELECT
             p.id,
             p.jugaad_id,
             p.proposal_message,
@@ -310,6 +335,8 @@ export const findMyProposals = async (helperId) => {
 
             poster.name AS poster_name,
 
+            c.id AS conversation_id,
+
             co.amount AS latest_counter_amount,
             co.message AS latest_counter_message,
             co.offered_by AS latest_counter_offered_by
@@ -321,6 +348,10 @@ export const findMyProposals = async (helperId) => {
 
         JOIN users poster
             ON poster.id = j.poster_id
+
+        LEFT JOIN conversations c
+            ON c.proposal_id = p.id
+            AND c.jugaad_id = p.jugaad_id
 
         LEFT JOIN LATERAL (
             SELECT
@@ -353,7 +384,7 @@ export const findMyProposals = async (helperId) => {
 
 export const findReceivedProposals = async (posterId) => {
     const query = `
-        SELECT 
+        SELECT
             p.id,
             p.jugaad_id,
             p.helper_id,
@@ -372,6 +403,8 @@ export const findReceivedProposals = async (posterId) => {
             helper.number AS helper_number,
             helper.location AS helper_location,
 
+            c.id AS conversation_id,
+
             co.amount AS latest_counter_amount,
             co.message AS latest_counter_message,
             co.offered_by AS latest_counter_offered_by
@@ -383,6 +416,10 @@ export const findReceivedProposals = async (posterId) => {
 
         JOIN users helper
             ON helper.id = p.helper_id
+
+        LEFT JOIN conversations c
+            ON c.proposal_id = p.id
+            AND c.jugaad_id = p.jugaad_id
 
         LEFT JOIN LATERAL (
             SELECT
@@ -450,7 +487,7 @@ export const acceptProposalTransaction = async (
 
         if (propRows.length === 0) {
             const err = new Error(
-                "Proposal not found."
+                'Proposal not found.'
             );
 
             err.statusCode = 404;
@@ -469,7 +506,7 @@ export const acceptProposalTransaction = async (
             posterId.toString()
         ) {
             const err = new Error(
-                "Unauthorized: Only the Jugaad owner can accept proposals."
+                'Unauthorized: Only the Jugaad owner can accept proposals.'
             );
 
             err.statusCode = 403;
@@ -521,12 +558,14 @@ export const acceptProposalTransaction = async (
             RETURNING *;
         `;
 
-        const { rows: updatedPropRows } = await client.query(
-            updatePropQuery,
-            [proposalId]
-        );
+        const { rows: updatedPropRows } =
+            await client.query(
+                updatePropQuery,
+                [proposalId]
+            );
 
-        const acceptedProposal = updatedPropRows[0];
+        const acceptedProposal =
+            updatedPropRows[0];
 
         // ============================================================
         // 6. UPDATE JUGAAD
@@ -545,15 +584,17 @@ export const acceptProposalTransaction = async (
             RETURNING *;
         `;
 
-        const { rows: updatedJugaadRows } = await client.query(
-            updateJugaadQuery,
-            [
-                proposal.helper_id,
-                proposal.jugaad_id
-            ]
-        );
+        const { rows: updatedJugaadRows } =
+            await client.query(
+                updateJugaadQuery,
+                [
+                    proposal.helper_id,
+                    proposal.jugaad_id
+                ]
+            );
 
-        const updatedJugaad = updatedJugaadRows[0];
+        const updatedJugaad =
+            updatedJugaadRows[0];
 
         // ============================================================
         // 7. REJECT OTHER PENDING PROPOSALS
@@ -573,13 +614,14 @@ export const acceptProposalTransaction = async (
             RETURNING id, helper_id;
         `;
 
-        const { rows: rejectedHelpers } = await client.query(
-            rejectOthersQuery,
-            [
-                proposal.jugaad_id,
-                proposalId
-            ]
-        );
+        const { rows: rejectedHelpers } =
+            await client.query(
+                rejectOthersQuery,
+                [
+                    proposal.jugaad_id,
+                    proposalId
+                ]
+            );
 
         // ============================================================
         // 8. CREATE / UNLOCK CONVERSATION
@@ -600,15 +642,17 @@ export const acceptProposalTransaction = async (
             RETURNING *;
         `;
 
-        const { rows: convRows } = await client.query(
-            createConvQuery,
-            [
-                proposal.jugaad_id,
-                proposalId
-            ]
-        );
+        const { rows: convRows } =
+            await client.query(
+                createConvQuery,
+                [
+                    proposal.jugaad_id,
+                    proposalId
+                ]
+            );
 
-        const conversation = convRows[0];
+        const conversation =
+            convRows[0];
 
         // ============================================================
         // 9. ADD PARTICIPANTS
