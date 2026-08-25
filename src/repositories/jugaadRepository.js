@@ -1,22 +1,26 @@
 import pool from '../config/db.js';
 
 /**
+ * ============================================================
+ * JUGAAD REPOSITORY
+ * ============================================================
+ */
+
+/**
  * Create a new Jugaad
  */
-export const createJugaad = async (jugaadData) => {
-    const {
-        posterId,
-        collegeId,
-        title,
-        description,
-        category,
-        requiredSkills = [],
-        budget,
-        deadline,
-        priority = 'medium',
-        attachmentUrl = null
-    } = jugaadData;
-
+export const createJugaad = async ({
+    posterId,
+    collegeId,
+    title,
+    description,
+    category,
+    requiredSkills,
+    budget,
+    deadline,
+    priority,
+    attachmentUrl
+}) => {
     const query = `
         INSERT INTO jugaads (
             poster_id,
@@ -28,10 +32,12 @@ export const createJugaad = async (jugaadData) => {
             budget,
             deadline,
             priority,
-            attachment_url,
-            status
+            attachment_url
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'open')
+        VALUES (
+            $1, $2, $3, $4, $5,
+            $6, $7, $8, $9, $10
+        )
         RETURNING *;
     `;
 
@@ -41,11 +47,11 @@ export const createJugaad = async (jugaadData) => {
         title,
         description,
         category,
-        requiredSkills,
+        requiredSkills || [],
         budget,
         deadline,
-        priority,
-        attachmentUrl
+        priority || 'medium',
+        attachmentUrl || null
     ];
 
     const { rows } = await pool.query(query, values);
@@ -55,76 +61,55 @@ export const createJugaad = async (jugaadData) => {
 
 
 /**
- * Find one Jugaad by ID
+ * ============================================================
+ * GET JUGAAD BY ID
+ * ============================================================
  */
+
 export const findJugaadById = async (id) => {
     const query = `
         SELECT
-            j.id,
-            j.title,
-            j.description,
-            j.category,
-            j.required_skills,
-            j.budget,
-            j.deadline,
-            j.priority,
-            j.attachment_url,
-            j.status,
-            j.created_at,
-            j.updated_at,
-            j.college_id,
+            j.*,
 
-            c.name AS college_name,
+            u.name AS poster_name,
+            u.email AS poster_email,
 
-            j.poster_id,
+            h.name AS helper_name,
+            h.email AS helper_email,
 
-            poster.name AS poster_name,
-            poster.email AS poster_email,
-            poster.number AS poster_number,
-            poster.location AS poster_location,
-
-            j.helper_id,
-
-            helper.name AS helper_name,
-            helper.email AS helper_email,
-
-            COALESCE(prop.proposal_count, 0)::INTEGER AS proposal_count
+            c.name AS college_name
 
         FROM jugaads j
 
-        JOIN users poster
-            ON poster.id = j.poster_id
+        LEFT JOIN users u
+            ON u.id = j.poster_id
 
-        JOIN college c
+        LEFT JOIN users h
+            ON h.id = j.helper_id
+
+        LEFT JOIN college c
             ON c.id = j.college_id
 
-        LEFT JOIN users helper
-            ON helper.id = j.helper_id
-
-        LEFT JOIN (
-            SELECT
-                jugaad_id,
-                COUNT(*) AS proposal_count
-            FROM jugaad_proposals
-            WHERE status != 'withdrawn'
-            GROUP BY jugaad_id
-        ) prop
-            ON prop.jugaad_id = j.id
-
-        WHERE j.id = $1;
+        WHERE j.id = $1
+        LIMIT 1;
     `;
 
     const { rows } = await pool.query(query, [id]);
 
-    return rows[0];
+    return rows[0] || null;
 };
 
 
 /**
- * Update Jugaad
+ * ============================================================
+ * UPDATE JUGAAD
+ * ============================================================
  */
-export const updateJugaad = async (id, posterId, updateData) => {
-    const {
+
+export const updateJugaad = async (
+    id,
+    posterId,
+    {
         title,
         description,
         category,
@@ -133,63 +118,88 @@ export const updateJugaad = async (id, posterId, updateData) => {
         deadline,
         priority,
         attachmentUrl
-    } = updateData;
+    }
+) => {
+    const fields = [];
+    const values = [];
+    let index = 1;
+
+    if (title !== undefined) {
+        fields.push(`title = $${index++}`);
+        values.push(title);
+    }
+
+    if (description !== undefined) {
+        fields.push(`description = $${index++}`);
+        values.push(description);
+    }
+
+    if (category !== undefined) {
+        fields.push(`category = $${index++}`);
+        values.push(category);
+    }
+
+    if (requiredSkills !== undefined) {
+        fields.push(`required_skills = $${index++}`);
+        values.push(requiredSkills);
+    }
+
+    if (budget !== undefined) {
+        fields.push(`budget = $${index++}`);
+        values.push(budget);
+    }
+
+    if (deadline !== undefined) {
+        fields.push(`deadline = $${index++}`);
+        values.push(deadline);
+    }
+
+    if (priority !== undefined) {
+        fields.push(`priority = $${index++}`);
+        values.push(priority);
+    }
+
+    if (attachmentUrl !== undefined) {
+        fields.push(`attachment_url = $${index++}`);
+        values.push(attachmentUrl);
+    }
+
+    fields.push(`updated_at = CURRENT_TIMESTAMP`);
+
+    values.push(id);
+    values.push(posterId);
 
     const query = `
         UPDATE jugaads
-        SET
-            title = COALESCE($1, title),
-            description = COALESCE($2, description),
-            category = COALESCE($3, category),
-            required_skills = COALESCE($4, required_skills),
-            budget = COALESCE($5, budget),
-            deadline = COALESCE($6, deadline),
-            priority = COALESCE($7, priority),
-            attachment_url = COALESCE($8, attachment_url),
-            updated_at = CURRENT_TIMESTAMP
-
-        WHERE id = $9
-          AND poster_id = $10
-          AND status = 'open'
-
+        SET ${fields.join(', ')}
+        WHERE id = $${index++}
+          AND poster_id = $${index++}
         RETURNING *;
     `;
 
-    const values = [
-        title ?? null,
-        description ?? null,
-        category ?? null,
-        requiredSkills ?? null,
-        budget ?? null,
-        deadline ?? null,
-        priority ?? null,
-        attachmentUrl ?? null,
-        id,
-        posterId
-    ];
-
     const { rows } = await pool.query(query, values);
 
-    return rows[0];
+    return rows[0] || null;
 };
 
 
 /**
- * Cancel/Delete Jugaad
- *
- * We keep the row in the database and mark it as cancelled.
+ * ============================================================
+ * CANCEL / DELETE JUGAAD
+ * ============================================================
  */
-export const cancelOrDeleteJugaad = async (id, posterId) => {
+
+export const cancelOrDeleteJugaad = async (
+    id,
+    posterId
+) => {
     const query = `
         UPDATE jugaads
         SET
             status = 'cancelled',
             updated_at = CURRENT_TIMESTAMP
-
         WHERE id = $1
           AND poster_id = $2
-          AND status = 'open'
-
         RETURNING *;
     `;
 
@@ -198,43 +208,29 @@ export const cancelOrDeleteJugaad = async (id, posterId) => {
         posterId
     ]);
 
-    return rows[0];
+    return rows[0] || null;
 };
 
 
 /**
- * Get all Jugaads created by a user
+ * ============================================================
+ * GET MY JUGAADS
+ * ============================================================
  */
+
 export const findMyJugaads = async (
     posterId,
-    status = null
+    status
 ) => {
     let query = `
         SELECT
             j.*,
-
-            c.name AS college_name,
-
-            COALESCE(prop.proposal_count, 0)::INTEGER
-                AS proposal_count
+            COUNT(DISTINCT p.id)::INTEGER AS proposal_count
 
         FROM jugaads j
 
-        JOIN college c
-            ON c.id = j.college_id
-
-        LEFT JOIN (
-            SELECT
-                jugaad_id,
-                COUNT(*) AS proposal_count
-
-            FROM jugaad_proposals
-
-            WHERE status != 'withdrawn'
-
-            GROUP BY jugaad_id
-        ) prop
-            ON prop.jugaad_id = j.id
+        LEFT JOIN jugaad_proposals p
+            ON p.jugaad_id = j.id
 
         WHERE j.poster_id = $1
     `;
@@ -242,14 +238,12 @@ export const findMyJugaads = async (
     const values = [posterId];
 
     if (status) {
+        query += ` AND j.status = $2`;
         values.push(status);
-
-        query += `
-            AND j.status = $${values.length}
-        `;
     }
 
     query += `
+        GROUP BY j.id
         ORDER BY j.created_at DESC;
     `;
 
@@ -263,29 +257,32 @@ export const findMyJugaads = async (
 
 
 /**
- * Find Jugaads for discovery feed
+ * ============================================================
+ * DISCOVERY FEED
+ * ============================================================
  */
+
 export const findDiscoverableJugaads = async ({
     currentUserId,
-    userCollegeId = null,
-    collegeId = null,
-    category = null,
-    skills = null,
-    search = null,
-    minBudget = null,
-    maxBudget = null,
-    limit = 20,
-    offset = 0
+    userCollegeId,
+    collegeId,
+    category,
+    skills,
+    search,
+    minBudget,
+    maxBudget,
+    limit,
+    offset
 }) => {
     const conditions = [
-        `j.poster_id != $1`,
         `j.status = 'open'`,
-        `j.deadline > CURRENT_TIMESTAMP`,
+        `j.poster_id <> $1`,
         `
-        j.id NOT IN (
-            SELECT jugaad_id
-            FROM jugaad_not_interested
-            WHERE user_id = $1
+        NOT EXISTS (
+            SELECT 1
+            FROM jugaad_not_interested ni
+            WHERE ni.user_id = $1
+              AND ni.jugaad_id = j.id
         )
         `
     ];
@@ -294,158 +291,93 @@ export const findDiscoverableJugaads = async ({
         currentUserId
     ];
 
-    /*
-     * Prefer explicitly requested college.
-     * Otherwise use user's college.
+    let index = 2;
+
+    /**
+     * Prefer the user's college when no explicit
+     * college filter is provided.
      */
-    const targetCollegeId =
-        collegeId || userCollegeId;
-
-    if (targetCollegeId) {
-        values.push(targetCollegeId);
-
-        conditions.push(
-            `j.college_id = $${values.length}`
-        );
+    if (collegeId) {
+        conditions.push(`j.college_id = $${index++}`);
+        values.push(collegeId);
+    } else if (userCollegeId) {
+        conditions.push(`j.college_id = $${index++}`);
+        values.push(userCollegeId);
     }
 
-    /*
-     * Category filter
-     */
     if (category) {
-        values.push(category);
-
         conditions.push(
-            `j.category ILIKE $${values.length}`
+            `LOWER(j.category) = LOWER($${index++})`
         );
+        values.push(category);
     }
 
-    /*
-     * Search filter
-     */
-    if (search) {
-        values.push(`%${search}%`);
+    if (skills && skills.length > 0) {
+        conditions.push(
+            `j.required_skills && $${index++}::TEXT[]`
+        );
+        values.push(skills);
+    }
 
+    if (search) {
         conditions.push(`
             (
-                j.title ILIKE $${values.length}
-                OR
-                j.description ILIKE $${values.length}
+                j.title ILIKE $${index}
+                OR j.description ILIKE $${index}
+                OR j.category ILIKE $${index}
             )
         `);
+
+        values.push(`%${search}%`);
+        index++;
     }
 
-    /*
-     * Minimum budget
-     */
-    if (
-        minBudget !== null &&
-        minBudget !== undefined
-    ) {
+    if (minBudget !== null && minBudget !== undefined) {
+        conditions.push(
+            `j.budget >= $${index++}`
+        );
         values.push(minBudget);
-
-        conditions.push(
-            `j.budget >= $${values.length}`
-        );
     }
 
-    /*
-     * Maximum budget
-     */
-    if (
-        maxBudget !== null &&
-        maxBudget !== undefined
-    ) {
+    if (maxBudget !== null && maxBudget !== undefined) {
+        conditions.push(
+            `j.budget <= $${index++}`
+        );
         values.push(maxBudget);
-
-        conditions.push(
-            `j.budget <= $${values.length}`
-        );
     }
 
-    /*
-     * Required skills filter
-     */
-    if (
-        skills &&
-        Array.isArray(skills) &&
-        skills.length > 0
-    ) {
-        values.push(skills);
+    const limitIndex = index++;
+    const offsetIndex = index++;
 
-        conditions.push(
-            `j.required_skills && $${values.length}::text[]`
-        );
-    }
-
-    /*
-     * Pagination
-     */
     values.push(limit);
-
-    const limitIndex = values.length;
-
     values.push(offset);
-
-    const offsetIndex = values.length;
 
     const query = `
         SELECT
-            j.id,
-            j.title,
-            j.description,
-            j.category,
-            j.required_skills,
-            j.budget,
-            j.deadline,
-            j.priority,
-            j.attachment_url,
-            j.status,
-            j.created_at,
-            j.college_id,
+            j.*,
 
-            c.name AS college_name,
+            u.name AS poster_name,
+            u.email AS poster_email,
 
-            poster.name AS poster_name,
-
-            COALESCE(
-                prop.proposal_count,
-                0
-            )::INTEGER AS proposal_count,
-
-            CASE
-                WHEN j.priority = 'urgent' THEN 4
-                WHEN j.priority = 'high' THEN 3
-                WHEN j.priority = 'medium' THEN 2
-                ELSE 1
-            END AS priority_weight
+            c.name AS college_name
 
         FROM jugaads j
 
-        JOIN users poster
-            ON poster.id = j.poster_id
+        LEFT JOIN users u
+            ON u.id = j.poster_id
 
-        JOIN college c
+        LEFT JOIN college c
             ON c.id = j.college_id
-
-        LEFT JOIN (
-            SELECT
-                jugaad_id,
-                COUNT(*) AS proposal_count
-
-            FROM jugaad_proposals
-
-            WHERE status != 'withdrawn'
-
-            GROUP BY jugaad_id
-        ) prop
-            ON prop.jugaad_id = j.id
 
         WHERE ${conditions.join(' AND ')}
 
         ORDER BY
-            priority_weight DESC,
-            j.deadline ASC,
+            CASE
+                WHEN j.priority = 'urgent' THEN 1
+                WHEN j.priority = 'high' THEN 2
+                WHEN j.priority = 'medium' THEN 3
+                ELSE 4
+            END,
             j.created_at DESC
 
         LIMIT $${limitIndex}
@@ -462,8 +394,11 @@ export const findDiscoverableJugaads = async ({
 
 
 /**
- * Mark a Jugaad as "not interested" for a user
+ * ============================================================
+ * MARK JUGAAD AS NOT INTERESTED
+ * ============================================================
  */
+
 export const markNotInterested = async (
     userId,
     jugaadId
@@ -475,10 +410,7 @@ export const markNotInterested = async (
         )
         VALUES ($1, $2)
 
-        ON CONFLICT (
-            user_id,
-            jugaad_id
-        )
+        ON CONFLICT (user_id, jugaad_id)
         DO NOTHING
 
         RETURNING *;
@@ -492,11 +424,156 @@ export const markNotInterested = async (
         ]
     );
 
-    return (
-        rows[0] || {
-            user_id: userId,
-            jugaad_id: jugaadId,
-            already_marked: true
-        }
+    return rows[0] || null;
+};
+
+
+/**
+ * ============================================================
+ * CREATE INTEREST / PROPOSAL
+ * ============================================================
+ *
+ * This is important for the problem we are fixing.
+ *
+ * When a student clicks "INTERESTED", the request needs
+ * to be stored in jugaad_proposals.
+ */
+
+export const createInterestProposal = async (
+    userId,
+    jugaadId,
+    message,
+    proposedPrice
+) => {
+    const query = `
+        INSERT INTO jugaad_proposals (
+            jugaad_id,
+            helper_id,
+            proposal_message,
+            proposed_price,
+            estimated_completion,
+            status
+        )
+        VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            NULL,
+            'pending'
+        )
+
+        ON CONFLICT (jugaad_id, helper_id)
+        DO UPDATE SET
+            proposal_message = EXCLUDED.proposal_message,
+            proposed_price = EXCLUDED.proposed_price,
+            status = 'pending',
+            updated_at = CURRENT_TIMESTAMP
+
+        RETURNING *;
+    `;
+
+    const values = [
+        jugaadId,
+        userId,
+        message,
+        proposedPrice
+    ];
+
+    const { rows } = await pool.query(
+        query,
+        values
     );
+
+    return rows[0] || null;
+};
+
+
+/**
+ * ============================================================
+ * GET PROPOSALS FOR A JUGAAD
+ * ============================================================
+ *
+ * Used by "My Jugaads" to show:
+ *
+ * INTERESTED STUDENTS
+ * -------------------
+ * Student 1
+ * Student 2
+ * Student 3
+ */
+
+export const findProposalsForJugaad = async (
+    jugaadId,
+    posterId
+) => {
+    const query = `
+        SELECT
+            p.id,
+            p.jugaad_id,
+            p.helper_id,
+            p.proposal_message,
+            p.proposed_price,
+            p.estimated_completion,
+            p.status,
+            p.created_at,
+            p.updated_at,
+
+            u.name AS helper_name,
+            u.email AS helper_email,
+            u.number AS helper_number,
+            u.location AS helper_location,
+
+            c.name AS helper_college_name
+
+        FROM jugaad_proposals p
+
+        INNER JOIN jugaads j
+            ON j.id = p.jugaad_id
+
+        INNER JOIN users u
+            ON u.id = p.helper_id
+
+        LEFT JOIN college c
+            ON c.id = u.college_id
+
+        WHERE p.jugaad_id = $1
+          AND j.poster_id = $2
+
+        ORDER BY p.created_at DESC;
+    `;
+
+    const { rows } = await pool.query(
+        query,
+        [
+            jugaadId,
+            posterId
+        ]
+    );
+
+    return rows;
+};
+
+
+/**
+ * ============================================================
+ * GET PROPOSAL COUNT FOR A JUGAAD
+ * ============================================================
+ */
+
+export const countProposalsForJugaad = async (
+    jugaadId
+) => {
+    const query = `
+        SELECT COUNT(*)::INTEGER AS count
+        FROM jugaad_proposals
+        WHERE jugaad_id = $1;
+    `;
+
+    const { rows } = await pool.query(
+        query,
+        [jugaadId]
+    );
+
+    return rows[0]?.count || 0;
 };
