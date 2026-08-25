@@ -1,6 +1,7 @@
 import express from 'express';
 
 import * as jugaadController from '../controllers/jugaadController.js';
+import * as proposalController from '../controllers/proposalController.js';
 
 import { authenticate } from '../middleware/authMiddleware.js';
 
@@ -10,6 +11,8 @@ const router = express.Router();
  * ============================================================
  * CREATE JUGAAD
  * ============================================================
+ *
+ * POST /api/v1/jugaads
  */
 
 router.post(
@@ -36,7 +39,7 @@ router.get(
 
 /**
  * ============================================================
- * MY JUGAADS
+ * MY JUGAAD POSTS
  * ============================================================
  *
  * GET /api/v1/jugaads/my
@@ -83,20 +86,33 @@ router.post(
 
 /**
  * ============================================================
- * JUGAAD-SPECIFIC PROPOSALS
+ * SUBMIT PROPOSAL
+ * ============================================================
+ *
+ * POST /api/v1/jugaads/:id/proposals
+ *
+ * Student submits a proposal/bargain offer
+ * for a specific Jugaad.
+ */
+
+router.post(
+    '/:id/proposals',
+    authenticate,
+    proposalController.submitProposal
+);
+
+
+/**
+ * ============================================================
+ * GET PROPOSALS FOR A JUGAAD
  * ============================================================
  *
  * GET /api/v1/jugaads/:id/proposals
  *
- * Poster uses this to see interested students.
+ * Poster uses this endpoint to see interested
+ * students and their proposals.
  *
- * IMPORTANT:
- * This route must come BEFORE:
- *
- * /:id
- *
- * so that "proposals" is not interpreted as
- * a Jugaad ID.
+ * This route must come before /:id.
  */
 
 router.get(
