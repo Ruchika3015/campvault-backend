@@ -80,23 +80,23 @@ export const findJugaadById = async (
         SELECT
             j.*,
 
-            u.name AS poster_name,
-            u.email AS poster_email,
+            poster.name AS poster_name,
+            poster.email AS poster_email,
 
-            h.name AS helper_name,
-            h.email AS helper_email,
-            h.number AS helper_number,
-            h.location AS helper_location,
+            helper.name AS helper_name,
+            helper.email AS helper_email,
+            helper.number AS helper_number,
+            helper.location AS helper_location,
 
             c.name AS college_name
 
         FROM jugaads j
 
-        LEFT JOIN users u
-            ON u.id = j.poster_id
+        LEFT JOIN users poster
+            ON poster.id = j.poster_id
 
-        LEFT JOIN users h
-            ON h.id = j.helper_id
+        LEFT JOIN users helper
+            ON helper.id = j.helper_id
 
         LEFT JOIN college c
             ON c.id = j.college_id
@@ -146,10 +146,7 @@ export const updateJugaad = async (
         fields.push(
             `title = $${index++}`
         );
-
-        values.push(
-            title
-        );
+        values.push(title);
     }
 
     if (
@@ -158,10 +155,7 @@ export const updateJugaad = async (
         fields.push(
             `description = $${index++}`
         );
-
-        values.push(
-            description
-        );
+        values.push(description);
     }
 
     if (
@@ -170,10 +164,7 @@ export const updateJugaad = async (
         fields.push(
             `category = $${index++}`
         );
-
-        values.push(
-            category
-        );
+        values.push(category);
     }
 
     if (
@@ -182,10 +173,7 @@ export const updateJugaad = async (
         fields.push(
             `required_skills = $${index++}`
         );
-
-        values.push(
-            requiredSkills
-        );
+        values.push(requiredSkills);
     }
 
     if (
@@ -194,10 +182,7 @@ export const updateJugaad = async (
         fields.push(
             `budget = $${index++}`
         );
-
-        values.push(
-            budget
-        );
+        values.push(budget);
     }
 
     if (
@@ -206,10 +191,7 @@ export const updateJugaad = async (
         fields.push(
             `deadline = $${index++}`
         );
-
-        values.push(
-            deadline
-        );
+        values.push(deadline);
     }
 
     if (
@@ -218,10 +200,7 @@ export const updateJugaad = async (
         fields.push(
             `priority = $${index++}`
         );
-
-        values.push(
-            priority
-        );
+        values.push(priority);
     }
 
     if (
@@ -230,10 +209,7 @@ export const updateJugaad = async (
         fields.push(
             `attachment_url = $${index++}`
         );
-
-        values.push(
-            attachmentUrl
-        );
+        values.push(attachmentUrl);
     }
 
     fields.push(
@@ -277,8 +253,10 @@ export const cancelOrDeleteJugaad = async (
         SET
             status = 'cancelled',
             updated_at = CURRENT_TIMESTAMP
+
         WHERE id = $1
           AND poster_id = $2
+
         RETURNING *;
     `;
 
@@ -301,31 +279,25 @@ export const cancelOrDeleteJugaad = async (
  * GET MY JUGAADS
  * ============================================================
  *
- * Returns:
- * - all Jugaad fields
- * - college name
- * - assigned helper id
- * - assigned helper name
- * - assigned helper email
- * - assigned helper number
- * - assigned helper location
- * - proposal count
+ * IMPORTANT:
+ * This returns the assigned student's details too.
  */
 
 export const findMyJugaads = async (
     posterId,
     status = null
 ) => {
+
     let query = `
         SELECT
             j.*,
 
             c.name AS college_name,
 
-            h.name AS helper_name,
-            h.email AS helper_email,
-            h.number AS helper_number,
-            h.location AS helper_location,
+            helper.name AS helper_name,
+            helper.email AS helper_email,
+            helper.number AS helper_number,
+            helper.location AS helper_location,
 
             COUNT(
                 DISTINCT p.id
@@ -336,11 +308,12 @@ export const findMyJugaads = async (
         LEFT JOIN college c
             ON c.id = j.college_id
 
-        LEFT JOIN users h
-            ON h.id = j.helper_id
+        LEFT JOIN users helper
+            ON helper.id = j.helper_id
 
         LEFT JOIN jugaad_proposals p
             ON p.jugaad_id = j.id
+            AND p.status != 'withdrawn'
 
         WHERE j.poster_id = $1
     `;
@@ -361,11 +334,11 @@ export const findMyJugaads = async (
         GROUP BY
             j.id,
             c.name,
-            h.id,
-            h.name,
-            h.email,
-            h.number,
-            h.location
+            helper.id,
+            helper.name,
+            helper.email,
+            helper.number,
+            helper.location
 
         ORDER BY
             j.created_at DESC;
@@ -400,9 +373,9 @@ export const findDiscoverableJugaads = async ({
     limit,
     offset
 }) => {
+
     const conditions = [
         `j.status = 'open'`,
-
         `j.poster_id <> $1`,
 
         `
@@ -421,12 +394,8 @@ export const findDiscoverableJugaads = async ({
 
     let index = 2;
 
-    /**
-     * Prefer the user's college when no explicit
-     * college filter is provided.
-     */
-
     if (collegeId) {
+
         conditions.push(
             `j.college_id = $${index++}`
         );
@@ -447,6 +416,7 @@ export const findDiscoverableJugaads = async ({
     }
 
     if (category) {
+
         conditions.push(
             `LOWER(j.category) = LOWER($${index++})`
         );
@@ -460,6 +430,7 @@ export const findDiscoverableJugaads = async ({
         skills &&
         skills.length > 0
     ) {
+
         conditions.push(
             `j.required_skills && $${index++}::TEXT[]`
         );
@@ -470,6 +441,7 @@ export const findDiscoverableJugaads = async ({
     }
 
     if (search) {
+
         conditions.push(`
             (
                 j.title ILIKE $${index}
@@ -489,6 +461,7 @@ export const findDiscoverableJugaads = async ({
         minBudget !== null &&
         minBudget !== undefined
     ) {
+
         conditions.push(
             `j.budget >= $${index++}`
         );
@@ -502,6 +475,7 @@ export const findDiscoverableJugaads = async ({
         maxBudget !== null &&
         maxBudget !== undefined
     ) {
+
         conditions.push(
             `j.budget <= $${index++}`
         );
@@ -529,15 +503,15 @@ export const findDiscoverableJugaads = async ({
         SELECT
             j.*,
 
-            u.name AS poster_name,
-            u.email AS poster_email,
+            poster.name AS poster_name,
+            poster.email AS poster_email,
 
             c.name AS college_name
 
         FROM jugaads j
 
-        LEFT JOIN users u
-            ON u.id = j.poster_id
+        LEFT JOIN users poster
+            ON poster.id = j.poster_id
 
         LEFT JOIN college c
             ON c.id = j.college_id
@@ -579,7 +553,7 @@ export const findDiscoverableJugaads = async ({
 
 /**
  * ============================================================
- * MARK JUGAAD AS NOT INTERESTED
+ * MARK NOT INTERESTED
  * ============================================================
  */
 
@@ -587,6 +561,7 @@ export const markNotInterested = async (
     userId,
     jugaadId
 ) => {
+
     const query = `
         INSERT INTO jugaad_not_interested (
             user_id,
@@ -621,9 +596,6 @@ export const markNotInterested = async (
  * ============================================================
  * CREATE INTEREST / PROPOSAL
  * ============================================================
- *
- * When a student clicks INTERESTED,
- * create a proposal in jugaad_proposals.
  */
 
 export const createInterestProposal = async (
@@ -632,6 +604,7 @@ export const createInterestProposal = async (
     message,
     proposedPrice
 ) => {
+
     const query = `
         INSERT INTO jugaad_proposals (
             jugaad_id,
@@ -654,6 +627,7 @@ export const createInterestProposal = async (
             jugaad_id,
             helper_id
         )
+
         DO UPDATE SET
             proposal_message =
                 EXCLUDED.proposal_message,
@@ -692,16 +666,13 @@ export const createInterestProposal = async (
  * ============================================================
  * GET PROPOSALS FOR A JUGAAD
  * ============================================================
- *
- * Used by My Jugaads to show:
- *
- * INTERESTED STUDENTS
  */
 
 export const findProposalsForJugaad = async (
     jugaadId,
     posterId
 ) => {
+
     const query = `
         SELECT
             p.id,
@@ -762,6 +733,7 @@ export const findProposalsForJugaad = async (
 export const countProposalsForJugaad = async (
     jugaadId
 ) => {
+
     const query = `
         SELECT
             COUNT(*)::INTEGER AS count
@@ -775,9 +747,7 @@ export const countProposalsForJugaad = async (
         rows
     } = await pool.query(
         query,
-        [
-            jugaadId
-        ]
+        [jugaadId]
     );
 
     return rows[0]?.count || 0;
