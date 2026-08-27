@@ -6,10 +6,15 @@ import pool from '../config/db.js';
 // ================================================================
 //
 // IMPORTANT:
-// Creating a proposal DOES NOT create a conversation.
 //
-// Conversation is created/reused only after the poster accepts
-// the proposal.
+// Student clicks INTERESTED / SEND PROPOSAL
+//          ↓
+// Proposal is created
+//          ↓
+// NO conversation
+// NO message
+//
+// Conversation is created/reused ONLY after poster accepts.
 // ================================================================
 
 export const createProposal = async ({
@@ -43,10 +48,10 @@ export const createProposal = async ({
     `;
 
     const values = [
-        jugaadId,
-        helperId,
+        Number(jugaadId),
+        Number(helperId),
         proposalMessage,
-        proposedPrice,
+        Number(proposedPrice),
         estimatedCompletion
     ];
 
@@ -57,7 +62,7 @@ export const createProposal = async ({
         values
     );
 
-    return rows[0];
+    return rows[0] || null;
 };
 
 
@@ -121,7 +126,7 @@ export const findProposalById = async (
         rows
     } = await pool.query(
         query,
-        [id]
+        [Number(id)]
     );
 
     return rows[0] || null;
@@ -140,8 +145,10 @@ export const findProposalByJugaadAndHelper = async (
     const query = `
         SELECT *
         FROM jugaad_proposals
+
         WHERE jugaad_id = $1
           AND helper_id = $2
+
         LIMIT 1;
     `;
 
@@ -150,8 +157,8 @@ export const findProposalByJugaadAndHelper = async (
     } = await pool.query(
         query,
         [
-            jugaadId,
-            helperId
+            Number(jugaadId),
+            Number(helperId)
         ]
     );
 
@@ -239,7 +246,7 @@ export const findProposalsByJugaadId = async (
         rows
     } = await pool.query(
         query,
-        [jugaadId]
+        [Number(jugaadId)]
     );
 
     return rows;
@@ -258,6 +265,7 @@ export const findMyProposals = async (
         SELECT
             p.id,
             p.jugaad_id,
+            p.helper_id,
             p.proposal_message,
             p.proposed_price,
             p.estimated_completion,
@@ -325,7 +333,7 @@ export const findMyProposals = async (
         rows
     } = await pool.query(
         query,
-        [helperId]
+        [Number(helperId)]
     );
 
     return rows;
@@ -413,7 +421,7 @@ export const findReceivedProposals = async (
         rows
     } = await pool.query(
         query,
-        [posterId]
+        [Number(posterId)]
     );
 
     return rows;
@@ -424,7 +432,13 @@ export const findReceivedProposals = async (
 // ACCEPT PROPOSAL TRANSACTION
 // ================================================================
 //
-// THIS is where the conversation is created/reused.
+// This is the ONLY place where a conversation is created/reused.
+//
+// INTERESTED:
+//     proposal only
+//
+// ACCEPT:
+//     conversation created/reused
 // ================================================================
 
 export const acceptProposalTransaction = async (
@@ -468,7 +482,7 @@ export const acceptProposalTransaction = async (
             rows: propRows
         } = await client.query(
             propQuery,
-            [proposalId]
+            [Number(proposalId)]
         );
 
 
@@ -476,14 +490,14 @@ export const acceptProposalTransaction = async (
             propRows.length === 0
         ) {
 
-            const err =
+            const error =
                 new Error(
                     'Proposal not found.'
                 );
 
-            err.statusCode = 404;
+            error.statusCode = 404;
 
-            throw err;
+            throw error;
         }
 
 
@@ -492,22 +506,24 @@ export const acceptProposalTransaction = async (
 
 
         // ============================================================
-        // 2. AUTHORIZATION
+        // 2. VERIFY POSTER
         // ============================================================
 
         if (
-            proposal.poster_id.toString() !==
-            posterId.toString()
+            Number(
+                proposal.poster_id
+            ) !==
+            Number(posterId)
         ) {
 
-            const err =
+            const error =
                 new Error(
                     'Unauthorized: Only the Jugaad owner can accept proposals.'
                 );
 
-            err.statusCode = 403;
+            error.statusCode = 403;
 
-            throw err;
+            throw error;
         }
 
 
@@ -520,14 +536,14 @@ export const acceptProposalTransaction = async (
             'pending'
         ) {
 
-            const err =
+            const error =
                 new Error(
                     `Cannot accept proposal with status '${proposal.status}'.`
                 );
 
-            err.statusCode = 400;
+            error.statusCode = 400;
 
-            throw err;
+            throw error;
         }
 
 
@@ -540,14 +556,14 @@ export const acceptProposalTransaction = async (
             'open'
         ) {
 
-            const err =
+            const error =
                 new Error(
                     `Cannot accept proposal on a Jugaad that is already '${proposal.jugaad_status}'.`
                 );
 
-            err.statusCode = 400;
+            error.statusCode = 400;
 
-            throw err;
+            throw error;
         }
 
 
@@ -555,7 +571,7 @@ export const acceptProposalTransaction = async (
         // 5. ACCEPT PROPOSAL
         // ============================================================
 
-        const updatePropQuery = `
+        const updateProposalQuery = `
             UPDATE jugaad_proposals
 
             SET
@@ -569,14 +585,15 @@ export const acceptProposalTransaction = async (
 
         const {
             rows:
-                updatedPropRows
+                acceptedProposalRows
         } = await client.query(
-            updatePropQuery,
-            [proposalId]
+            updateProposalQuery,
+            [Number(proposalId)]
         );
 
+
         const acceptedProposal =
-            updatedPropRows[0];
+            acceptedProposalRows[0];
 
 
         // ============================================================
@@ -602,13 +619,34 @@ export const acceptProposalTransaction = async (
         } = await client.query(
             updateJugaadQuery,
             [
-                proposal.helper_id,
-                proposal.jugaad_id
+                Number(
+                    proposal.helper_id
+                ),
+
+                Number(
+                    proposal.jugaad_id
+                )
             ]
         );
 
+
         const updatedJugaad =
             updatedJugaadRows[0];
+
+
+        if (
+            !updatedJugaad
+        ) {
+
+            const error =
+                new Error(
+                    'Unable to assign helper to the Jugaad.'
+                );
+
+            error.statusCode = 500;
+
+            throw error;
+        }
 
 
         // ============================================================
@@ -637,25 +675,86 @@ export const acceptProposalTransaction = async (
         } = await client.query(
             rejectOthersQuery,
             [
-                proposal.jugaad_id,
-                proposalId
+                Number(
+                    proposal.jugaad_id
+                ),
+
+                Number(
+                    proposalId
+                )
             ]
         );
 
 
         // ============================================================
-        // 8. CREATE OR REUSE ONE CONVERSATION
+        // 8. NORMALIZE USER PAIR IN JAVASCRIPT
         // ============================================================
         //
-        // Normalize the pair so:
+        // This avoids the PostgreSQL bigint/text problem caused by:
         //
-        // 1 + 2
-        // 2 + 1
+        // LEAST($1, $2)
         //
-        // always mean the same conversation.
+        // when parameters arrive as strings.
         //
+        // Example:
+        //
+        // poster = "1"
+        // helper = "2"
+        //
+        // becomes:
+        //
+        // userOne = 1
+        // userTwo = 2
+        // ============================================================
 
-        const createConvQuery = `
+        const firstUserId =
+            Number(posterId);
+
+        const secondUserId =
+            Number(
+                proposal.helper_id
+            );
+
+
+        if (
+            !Number.isInteger(
+                firstUserId
+            ) ||
+            !Number.isInteger(
+                secondUserId
+            )
+        ) {
+
+            const error =
+                new Error(
+                    'Invalid user ID while creating conversation.'
+                );
+
+            error.statusCode = 400;
+
+            throw error;
+        }
+
+
+        const userOneId =
+            Math.min(
+                firstUserId,
+                secondUserId
+            );
+
+
+        const userTwoId =
+            Math.max(
+                firstUserId,
+                secondUserId
+            );
+
+
+        // ============================================================
+        // 9. CREATE OR REUSE ONE CONVERSATION
+        // ============================================================
+
+        const createConversationQuery = `
             INSERT INTO conversations (
                 user_one_id,
                 user_two_id,
@@ -664,8 +763,8 @@ export const acceptProposalTransaction = async (
             )
 
             VALUES (
-                LEAST($1, $2),
-                GREATEST($1, $2),
+                $1,
+                $2,
                 $3,
                 $4
             )
@@ -685,25 +784,48 @@ export const acceptProposalTransaction = async (
             RETURNING *;
         `;
 
+
         const {
             rows:
-                convRows
+                conversationRows
         } = await client.query(
-            createConvQuery,
+            createConversationQuery,
             [
-                posterId,
-                proposal.helper_id,
-                proposal.jugaad_id,
-                proposalId
+                userOneId,
+                userTwoId,
+
+                Number(
+                    proposal.jugaad_id
+                ),
+
+                Number(
+                    proposalId
+                )
             ]
         );
 
+
         const conversation =
-            convRows[0];
+            conversationRows[0];
+
+
+        if (
+            !conversation
+        ) {
+
+            const error =
+                new Error(
+                    'Unable to create or reuse conversation.'
+                );
+
+            error.statusCode = 500;
+
+            throw error;
+        }
 
 
         // ============================================================
-        // 9. ADD PARTICIPANTS
+        // 10. ADD BOTH USERS AS PARTICIPANTS
         // ============================================================
 
         const addParticipantsQuery = `
@@ -724,18 +846,22 @@ export const acceptProposalTransaction = async (
             DO NOTHING;
         `;
 
+
         await client.query(
             addParticipantsQuery,
             [
-                conversation.id,
-                posterId,
-                proposal.helper_id
+                Number(
+                    conversation.id
+                ),
+
+                firstUserId,
+                secondUserId
             ]
         );
 
 
         // ============================================================
-        // 10. NOTIFY ACCEPTED HELPER
+        // 11. NOTIFY ACCEPTED HELPER
         // ============================================================
 
         const notifyAcceptedQuery = `
@@ -758,20 +884,23 @@ export const acceptProposalTransaction = async (
             );
         `;
 
+
         await client.query(
             notifyAcceptedQuery,
             [
-                proposal.helper_id,
+                secondUserId,
 
                 `Congratulations! Your proposal for "${proposal.jugaad_title}" has been accepted. Conversation is now unlocked!`,
 
-                proposal.jugaad_id
+                Number(
+                    proposal.jugaad_id
+                )
             ]
         );
 
 
         // ============================================================
-        // 11. NOTIFY REJECTED HELPERS
+        // 12. NOTIFY REJECTED HELPERS
         // ============================================================
 
         for (
@@ -799,21 +928,26 @@ export const acceptProposalTransaction = async (
                 );
             `;
 
+
             await client.query(
                 notifyRejectedQuery,
                 [
-                    rejected.helper_id,
+                    Number(
+                        rejected.helper_id
+                    ),
 
                     `Your proposal for "${proposal.jugaad_title}" was not selected as another proposal was accepted.`,
 
-                    proposal.jugaad_id
+                    Number(
+                        proposal.jugaad_id
+                    )
                 ]
             );
         }
 
 
         // ============================================================
-        // 12. COMMIT
+        // 13. COMMIT
         // ============================================================
 
         await client.query(
@@ -874,15 +1008,17 @@ export const rejectProposal = async (
             j.title AS jugaad_title;
     `;
 
+
     const {
         rows
     } = await pool.query(
         query,
         [
-            proposalId,
-            posterId
+            Number(proposalId),
+            Number(posterId)
         ]
     );
+
 
     return rows[0] || null;
 };
@@ -917,15 +1053,17 @@ export const withdrawProposal = async (
             j.title AS jugaad_title;
     `;
 
+
     const {
         rows
     } = await pool.query(
         query,
         [
-            proposalId,
-            helperId
+            Number(proposalId),
+            Number(helperId)
         ]
     );
+
 
     return rows[0] || null;
 };
@@ -942,6 +1080,10 @@ export const createCounterOffer = async ({
     message = null
 }) => {
 
+    // ------------------------------------------------------------
+    // Mark previous pending counter offers as countered
+    // ------------------------------------------------------------
+
     await pool.query(
         `
             UPDATE proposal_counter_offers
@@ -950,11 +1092,17 @@ export const createCounterOffer = async ({
                 status = 'countered'
 
             WHERE proposal_id = $1
-              AND status = 'pending'
+              AND status = 'pending';
         `,
-        [proposalId]
+        [
+            Number(proposalId)
+        ]
     );
 
+
+    // ------------------------------------------------------------
+    // Create new counter offer
+    // ------------------------------------------------------------
 
     const query = `
         INSERT INTO proposal_counter_offers (
@@ -976,19 +1124,21 @@ export const createCounterOffer = async ({
         RETURNING *;
     `;
 
+
     const {
         rows
     } = await pool.query(
         query,
         [
-            proposalId,
-            offeredBy,
-            amount,
+            Number(proposalId),
+            Number(offeredBy),
+            Number(amount),
             message
         ]
     );
 
-    return rows[0];
+
+    return rows[0] || null;
 };
 
 
@@ -1003,6 +1153,7 @@ export const findCounterOffersByProposalId = async (
     const query = `
         SELECT
             co.*,
+
             u.name AS offered_by_name
 
         FROM proposal_counter_offers co
@@ -1016,12 +1167,16 @@ export const findCounterOffersByProposalId = async (
             co.created_at ASC;
     `;
 
+
     const {
         rows
     } = await pool.query(
         query,
-        [proposalId]
+        [
+            Number(proposalId)
+        ]
     );
+
 
     return rows;
 };
