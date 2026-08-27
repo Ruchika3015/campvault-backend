@@ -39,8 +39,16 @@ export const createJugaad = async ({
             attachment_url
         )
         VALUES (
-            $1, $2, $3, $4, $5,
-            $6, $7, $8, $9, $10
+            $1,
+            $2,
+            $3,
+            $4,
+            $5,
+            $6,
+            $7,
+            $8,
+            $9,
+            $10
         )
         RETURNING *;
     `;
@@ -58,7 +66,9 @@ export const createJugaad = async ({
         attachmentUrl || null
     ];
 
-    const { rows } = await pool.query(
+    const {
+        rows
+    } = await pool.query(
         query,
         values
     );
@@ -102,6 +112,7 @@ export const findJugaadById = async (
             ON c.id = j.college_id
 
         WHERE j.id = $1
+
         LIMIT 1;
     `;
 
@@ -138,7 +149,9 @@ export const updateJugaad = async (
 ) => {
     const fields = [];
     const values = [];
+
     let index = 1;
+
 
     if (
         title !== undefined
@@ -146,8 +159,10 @@ export const updateJugaad = async (
         fields.push(
             `title = $${index++}`
         );
+
         values.push(title);
     }
+
 
     if (
         description !== undefined
@@ -155,8 +170,10 @@ export const updateJugaad = async (
         fields.push(
             `description = $${index++}`
         );
+
         values.push(description);
     }
+
 
     if (
         category !== undefined
@@ -164,8 +181,10 @@ export const updateJugaad = async (
         fields.push(
             `category = $${index++}`
         );
+
         values.push(category);
     }
+
 
     if (
         requiredSkills !== undefined
@@ -173,8 +192,10 @@ export const updateJugaad = async (
         fields.push(
             `required_skills = $${index++}`
         );
+
         values.push(requiredSkills);
     }
+
 
     if (
         budget !== undefined
@@ -182,8 +203,10 @@ export const updateJugaad = async (
         fields.push(
             `budget = $${index++}`
         );
+
         values.push(budget);
     }
+
 
     if (
         deadline !== undefined
@@ -191,8 +214,10 @@ export const updateJugaad = async (
         fields.push(
             `deadline = $${index++}`
         );
+
         values.push(deadline);
     }
+
 
     if (
         priority !== undefined
@@ -200,8 +225,10 @@ export const updateJugaad = async (
         fields.push(
             `priority = $${index++}`
         );
+
         values.push(priority);
     }
+
 
     if (
         attachmentUrl !== undefined
@@ -209,23 +236,32 @@ export const updateJugaad = async (
         fields.push(
             `attachment_url = $${index++}`
         );
+
         values.push(attachmentUrl);
     }
+
 
     fields.push(
         `updated_at = CURRENT_TIMESTAMP`
     );
 
+
     values.push(id);
     values.push(posterId);
 
+
     const query = `
         UPDATE jugaads
-        SET ${fields.join(', ')}
+
+        SET
+            ${fields.join(', ')}
+
         WHERE id = $${index++}
           AND poster_id = $${index++}
+
         RETURNING *;
     `;
+
 
     const {
         rows
@@ -233,6 +269,7 @@ export const updateJugaad = async (
         query,
         values
     );
+
 
     return rows[0] || null;
 };
@@ -250,6 +287,7 @@ export const cancelOrDeleteJugaad = async (
 ) => {
     const query = `
         UPDATE jugaads
+
         SET
             status = 'cancelled',
             updated_at = CURRENT_TIMESTAMP
@@ -259,6 +297,7 @@ export const cancelOrDeleteJugaad = async (
 
         RETURNING *;
     `;
+
 
     const {
         rows
@@ -270,6 +309,7 @@ export const cancelOrDeleteJugaad = async (
         ]
     );
 
+
     return rows[0] || null;
 };
 
@@ -279,8 +319,7 @@ export const cancelOrDeleteJugaad = async (
  * GET MY JUGAADS
  * ============================================================
  *
- * IMPORTANT:
- * This returns the assigned student's details too.
+ * Returns assigned student's details as well.
  */
 
 export const findMyJugaads = async (
@@ -318,17 +357,23 @@ export const findMyJugaads = async (
         WHERE j.poster_id = $1
     `;
 
+
     const values = [
         posterId
     ];
 
-    if (status) {
+
+    if (
+        status
+    ) {
         values.push(status);
+
 
         query += `
             AND j.status = $${values.length}
         `;
     }
+
 
     query += `
         GROUP BY
@@ -344,12 +389,14 @@ export const findMyJugaads = async (
             j.created_at DESC;
     `;
 
+
     const {
         rows
     } = await pool.query(
         query,
         values
     );
+
 
     return rows;
 };
@@ -376,26 +423,33 @@ export const findDiscoverableJugaads = async ({
 
     const conditions = [
         `j.status = 'open'`,
+
         `j.poster_id <> $1`,
 
         `
         NOT EXISTS (
             SELECT 1
+
             FROM jugaad_not_interested ni
+
             WHERE ni.user_id = $1
               AND ni.jugaad_id = j.id
         )
         `
     ];
 
+
     const values = [
         currentUserId
     ];
 
+
     let index = 2;
 
-    if (collegeId) {
 
+    if (
+        collegeId
+    ) {
         conditions.push(
             `j.college_id = $${index++}`
         );
@@ -404,8 +458,9 @@ export const findDiscoverableJugaads = async ({
             collegeId
         );
 
-    } else if (userCollegeId) {
-
+    } else if (
+        userCollegeId
+    ) {
         conditions.push(
             `j.college_id = $${index++}`
         );
@@ -415,8 +470,10 @@ export const findDiscoverableJugaads = async ({
         );
     }
 
-    if (category) {
 
+    if (
+        category
+    ) {
         conditions.push(
             `LOWER(j.category) = LOWER($${index++})`
         );
@@ -426,11 +483,11 @@ export const findDiscoverableJugaads = async ({
         );
     }
 
+
     if (
         skills &&
         skills.length > 0
     ) {
-
         conditions.push(
             `j.required_skills && $${index++}::TEXT[]`
         );
@@ -440,15 +497,19 @@ export const findDiscoverableJugaads = async ({
         );
     }
 
-    if (search) {
 
-        conditions.push(`
+    if (
+        search
+    ) {
+        conditions.push(
+            `
             (
                 j.title ILIKE $${index}
                 OR j.description ILIKE $${index}
                 OR j.category ILIKE $${index}
             )
-        `);
+            `
+        );
 
         values.push(
             `%${search}%`
@@ -457,11 +518,11 @@ export const findDiscoverableJugaads = async ({
         index++;
     }
 
+
     if (
         minBudget !== null &&
         minBudget !== undefined
     ) {
-
         conditions.push(
             `j.budget >= $${index++}`
         );
@@ -471,11 +532,11 @@ export const findDiscoverableJugaads = async ({
         );
     }
 
+
     if (
         maxBudget !== null &&
         maxBudget !== undefined
     ) {
-
         conditions.push(
             `j.budget <= $${index++}`
         );
@@ -485,19 +546,24 @@ export const findDiscoverableJugaads = async ({
         );
     }
 
+
     const limitIndex =
         index++;
 
+
     const offsetIndex =
         index++;
+
 
     values.push(
         limit
     );
 
+
     values.push(
         offset
     );
+
 
     const query = `
         SELECT
@@ -521,7 +587,9 @@ export const findDiscoverableJugaads = async ({
         )}
 
         ORDER BY
+
             CASE
+
                 WHEN j.priority = 'urgent'
                     THEN 1
 
@@ -532,6 +600,7 @@ export const findDiscoverableJugaads = async ({
                     THEN 3
 
                 ELSE 4
+
             END,
 
             j.created_at DESC
@@ -540,12 +609,14 @@ export const findDiscoverableJugaads = async ({
         OFFSET $${offsetIndex};
     `;
 
+
     const {
         rows
     } = await pool.query(
         query,
         values
     );
+
 
     return rows;
 };
@@ -567,16 +638,22 @@ export const markNotInterested = async (
             user_id,
             jugaad_id
         )
-        VALUES ($1, $2)
+
+        VALUES (
+            $1,
+            $2
+        )
 
         ON CONFLICT (
             user_id,
             jugaad_id
         )
+
         DO NOTHING
 
         RETURNING *;
     `;
+
 
     const {
         rows
@@ -588,6 +665,7 @@ export const markNotInterested = async (
         ]
     );
 
+
     return rows[0] || null;
 };
 
@@ -596,6 +674,19 @@ export const markNotInterested = async (
  * ============================================================
  * CREATE INTEREST / PROPOSAL
  * ============================================================
+ *
+ * IMPORTANT:
+ *
+ * This function ONLY creates a proposal.
+ *
+ * It DOES NOT:
+ *
+ * - create a conversation
+ * - create conversation participants
+ * - create a message
+ *
+ * The conversation must be created ONLY after
+ * the poster accepts the proposal.
  */
 
 export const createInterestProposal = async (
@@ -614,6 +705,7 @@ export const createInterestProposal = async (
             estimated_completion,
             status
         )
+
         VALUES (
             $1,
             $2,
@@ -629,6 +721,7 @@ export const createInterestProposal = async (
         )
 
         DO UPDATE SET
+
             proposal_message =
                 EXCLUDED.proposal_message,
 
@@ -644,6 +737,7 @@ export const createInterestProposal = async (
         RETURNING *;
     `;
 
+
     const values = [
         jugaadId,
         userId,
@@ -651,12 +745,14 @@ export const createInterestProposal = async (
         proposedPrice
     ];
 
+
     const {
         rows
     } = await pool.query(
         query,
         values
     );
+
 
     return rows[0] || null;
 };
@@ -710,6 +806,7 @@ export const findProposalsForJugaad = async (
             p.created_at DESC;
     `;
 
+
     const {
         rows
     } = await pool.query(
@@ -719,6 +816,7 @@ export const findProposalsForJugaad = async (
             posterId
         ]
     );
+
 
     return rows;
 };
@@ -743,12 +841,14 @@ export const countProposalsForJugaad = async (
         WHERE jugaad_id = $1;
     `;
 
+
     const {
         rows
     } = await pool.query(
         query,
         [jugaadId]
     );
+
 
     return rows[0]?.count || 0;
 };

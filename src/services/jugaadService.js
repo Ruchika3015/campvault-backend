@@ -1,6 +1,14 @@
 import * as jugaadRepository from '../repositories/jugaadRepository.js';
 
-export const createJugaad = async (jugaadInput, user) => {
+
+// ================================================================
+// CREATE JUGAAD
+// ================================================================
+
+export const createJugaad = async (
+    jugaadInput,
+    user
+) => {
     const {
         title,
         description,
@@ -13,123 +21,302 @@ export const createJugaad = async (jugaadInput, user) => {
         college_id
     } = jugaadInput;
 
-    const assignedCollegeId = college_id || user.college_id;
+
+    const assignedCollegeId =
+        college_id || user.college_id;
+
 
     if (!assignedCollegeId) {
-        const error = new Error(
-            'College ID is required to create a Jugaad.'
-        );
+        const error =
+            new Error(
+                'College ID is required to create a Jugaad.'
+            );
+
         error.statusCode = 400;
+
         throw error;
     }
 
-    const skillsArray = Array.isArray(required_skills)
-        ? required_skills
-              .map((s) => String(s).trim())
-              .filter(Boolean)
-        : typeof required_skills === 'string'
-        ? required_skills
-              .split(',')
-              .map((s) => s.trim())
-              .filter(Boolean)
-        : [];
 
-    const newJugaad = await jugaadRepository.createJugaad({
-        posterId: user.id,
-        collegeId: assignedCollegeId,
-        title: title.trim(),
-        description: description.trim(),
-        category: category.trim(),
-        requiredSkills: skillsArray,
-        budget: parseFloat(budget),
-        deadline: new Date(deadline),
-        priority,
-        attachmentUrl: attachment_url
-            ? attachment_url.trim()
-            : null
-    });
+    const skillsArray =
+        Array.isArray(required_skills)
+            ? required_skills
+                  .map(
+                      (s) =>
+                          String(s).trim()
+                  )
+                  .filter(Boolean)
+
+            : typeof required_skills ===
+              'string'
+            ? required_skills
+                  .split(',')
+                  .map(
+                      (s) => s.trim()
+                  )
+                  .filter(Boolean)
+
+            : [];
+
+
+    const parsedBudget =
+        parseFloat(budget);
+
+
+    if (
+        !Number.isFinite(parsedBudget) ||
+        parsedBudget <= 0
+    ) {
+        const error =
+            new Error(
+                'Budget must be greater than 0.'
+            );
+
+        error.statusCode = 400;
+
+        throw error;
+    }
+
+
+    const parsedDeadline =
+        new Date(deadline);
+
+
+    if (
+        Number.isNaN(
+            parsedDeadline.getTime()
+        )
+    ) {
+        const error =
+            new Error(
+                'A valid deadline is required.'
+            );
+
+        error.statusCode = 400;
+
+        throw error;
+    }
+
+
+    const newJugaad =
+        await jugaadRepository.createJugaad({
+            posterId:
+                user.id,
+
+            collegeId:
+                assignedCollegeId,
+
+            title:
+                title.trim(),
+
+            description:
+                description.trim(),
+
+            category:
+                category.trim(),
+
+            requiredSkills:
+                skillsArray,
+
+            budget:
+                parsedBudget,
+
+            deadline:
+                parsedDeadline,
+
+            priority,
+
+            attachmentUrl:
+                attachment_url
+                    ? attachment_url.trim()
+                    : null
+        });
+
 
     return newJugaad;
 };
 
 
-/**
- * ============================================================
- * GET JUGAAD BY ID
- * ============================================================
- */
+// ================================================================
+// GET JUGAAD BY ID
+// ================================================================
 
-export const getJugaadById = async (id) => {
+export const getJugaadById = async (
+    id
+) => {
+
     const jugaad =
-        await jugaadRepository.findJugaadById(id);
+        await jugaadRepository.findJugaadById(
+            id
+        );
+
 
     if (!jugaad) {
-        const error = new Error(
-            'Jugaad not found.'
-        );
+        const error =
+            new Error(
+                'Jugaad not found.'
+            );
+
         error.statusCode = 404;
+
         throw error;
     }
+
 
     return jugaad;
 };
 
 
-/**
- * ============================================================
- * UPDATE JUGAAD
- * ============================================================
- */
+// ================================================================
+// UPDATE JUGAAD
+// ================================================================
 
 export const updateJugaad = async (
     id,
     posterId,
     updateData
 ) => {
+
     const existing =
-        await jugaadRepository.findJugaadById(id);
+        await jugaadRepository.findJugaadById(
+            id
+        );
+
 
     if (!existing) {
-        const error = new Error(
-            'Jugaad not found.'
-        );
+        const error =
+            new Error(
+                'Jugaad not found.'
+            );
+
         error.statusCode = 404;
+
         throw error;
     }
+
 
     if (
         existing.poster_id.toString() !==
         posterId.toString()
     ) {
-        const error = new Error(
-            'Unauthorized: Only the creator can edit this Jugaad.'
-        );
+        const error =
+            new Error(
+                'Unauthorized: Only the creator can edit this Jugaad.'
+            );
+
         error.statusCode = 403;
+
         throw error;
     }
 
-    if (existing.status !== 'open') {
-        const error = new Error(
-            `Cannot edit a Jugaad that is '${existing.status}'.`
-        );
+
+    if (
+        existing.status !==
+        'open'
+    ) {
+        const error =
+            new Error(
+                `Cannot edit a Jugaad that is '${existing.status}'.`
+            );
+
         error.statusCode = 400;
+
         throw error;
     }
+
 
     const skillsArray =
-        updateData.required_skills !== undefined
-            ? Array.isArray(updateData.required_skills)
+        updateData.required_skills !==
+        undefined
+
+            ? Array.isArray(
+                  updateData.required_skills
+              )
+
                 ? updateData.required_skills
-                      .map((s) => String(s).trim())
+                      .map(
+                          (s) =>
+                              String(
+                                  s
+                              ).trim()
+                      )
                       .filter(Boolean)
+
                 : typeof updateData.required_skills ===
                   'string'
+
                 ? updateData.required_skills
                       .split(',')
-                      .map((s) => s.trim())
+                      .map(
+                          (s) =>
+                              s.trim()
+                      )
                       .filter(Boolean)
+
                 : []
+
             : undefined;
+
+
+    let parsedBudget;
+
+
+    if (
+        updateData.budget !==
+        undefined
+    ) {
+        parsedBudget =
+            parseFloat(
+                updateData.budget
+            );
+
+
+        if (
+            !Number.isFinite(
+                parsedBudget
+            ) ||
+            parsedBudget <= 0
+        ) {
+            const error =
+                new Error(
+                    'Budget must be greater than 0.'
+                );
+
+            error.statusCode = 400;
+
+            throw error;
+        }
+    }
+
+
+    let parsedDeadline;
+
+
+    if (
+        updateData.deadline
+    ) {
+        parsedDeadline =
+            new Date(
+                updateData.deadline
+            );
+
+
+        if (
+            Number.isNaN(
+                parsedDeadline.getTime()
+            )
+        ) {
+            const error =
+                new Error(
+                    'A valid deadline is required.'
+                );
+
+            error.statusCode = 400;
+
+            throw error;
+        }
+    }
+
 
     const updated =
         await jugaadRepository.updateJugaad(
@@ -137,78 +324,107 @@ export const updateJugaad = async (
             posterId,
             {
                 title:
-                    updateData.title?.trim(),
+                    updateData.title !==
+                    undefined
+                        ? updateData.title.trim()
+                        : undefined,
 
                 description:
-                    updateData.description?.trim(),
+                    updateData.description !==
+                    undefined
+                        ? updateData.description.trim()
+                        : undefined,
 
                 category:
-                    updateData.category?.trim(),
+                    updateData.category !==
+                    undefined
+                        ? updateData.category.trim()
+                        : undefined,
 
                 requiredSkills:
                     skillsArray,
 
                 budget:
-                    updateData.budget !== undefined
-                        ? parseFloat(updateData.budget)
-                        : undefined,
+                    parsedBudget,
 
                 deadline:
-                    updateData.deadline
-                        ? new Date(updateData.deadline)
-                        : undefined,
+                    parsedDeadline,
 
                 priority:
                     updateData.priority,
 
                 attachmentUrl:
-                    updateData.attachment_url?.trim()
+                    updateData.attachment_url !==
+                    undefined
+                        ? updateData
+                              .attachment_url
+                            ?.trim() ||
+                          null
+                        : undefined
             }
         );
+
 
     return updated;
 };
 
 
-/**
- * ============================================================
- * DELETE / CANCEL JUGAAD
- * ============================================================
- */
+// ================================================================
+// DELETE / CANCEL JUGAAD
+// ================================================================
 
 export const deleteJugaad = async (
     id,
     posterId
 ) => {
+
     const existing =
-        await jugaadRepository.findJugaadById(id);
+        await jugaadRepository.findJugaadById(
+            id
+        );
+
 
     if (!existing) {
-        const error = new Error(
-            'Jugaad not found.'
-        );
+        const error =
+            new Error(
+                'Jugaad not found.'
+            );
+
         error.statusCode = 404;
+
         throw error;
     }
+
 
     if (
         existing.poster_id.toString() !==
         posterId.toString()
     ) {
-        const error = new Error(
-            'Unauthorized: Only the creator can cancel/delete this Jugaad.'
-        );
+        const error =
+            new Error(
+                'Unauthorized: Only the creator can cancel/delete this Jugaad.'
+            );
+
         error.statusCode = 403;
+
         throw error;
     }
 
-    if (existing.status !== 'open') {
-        const error = new Error(
-            `Cannot cancel a Jugaad that is '${existing.status}'.`
-        );
+
+    if (
+        existing.status !==
+        'open'
+    ) {
+        const error =
+            new Error(
+                `Cannot cancel a Jugaad that is '${existing.status}'.`
+            );
+
         error.statusCode = 400;
+
         throw error;
     }
+
 
     const cancelled =
         await jugaadRepository.cancelOrDeleteJugaad(
@@ -216,20 +432,20 @@ export const deleteJugaad = async (
             posterId
         );
 
+
     return cancelled;
 };
 
 
-/**
- * ============================================================
- * MY JUGAAD POSTS
- * ============================================================
- */
+// ================================================================
+// MY JUGAAD POSTS
+// ================================================================
 
 export const getMyJugaads = async (
     posterId,
     status
 ) => {
+
     return await jugaadRepository.findMyJugaads(
         posterId,
         status
@@ -237,16 +453,15 @@ export const getMyJugaads = async (
 };
 
 
-/**
- * ============================================================
- * DISCOVERY FEED
- * ============================================================
- */
+// ================================================================
+// DISCOVERY FEED
+// ================================================================
 
 export const findJugaads = async (
     queryParams,
     user
 ) => {
+
     const {
         college_id,
         category,
@@ -258,221 +473,357 @@ export const findJugaads = async (
         page = 1
     } = queryParams;
 
-    const parsedLimit = Math.max(
-        1,
-        Math.min(
-            100,
-            parseInt(limit, 10) || 20
-        )
-    );
 
-    const parsedPage = Math.max(
-        1,
-        parseInt(page, 10) || 1
-    );
+    const parsedLimit =
+        Math.max(
+            1,
+            Math.min(
+                100,
+                parseInt(
+                    limit,
+                    10
+                ) || 20
+            )
+        );
+
+
+    const parsedPage =
+        Math.max(
+            1,
+            parseInt(
+                page,
+                10
+            ) || 1
+        );
+
 
     const offset =
         (parsedPage - 1) *
         parsedLimit;
 
-    const skillsArray = skills
-        ? Array.isArray(skills)
-            ? skills
-            : String(skills)
-                  .split(',')
-                  .map((s) => s.trim())
-                  .filter(Boolean)
-        : null;
+
+    const skillsArray =
+        skills
+
+            ? Array.isArray(skills)
+
+                ? skills
+
+                : String(skills)
+                      .split(',')
+                      .map(
+                          (s) =>
+                              s.trim()
+                      )
+                      .filter(Boolean)
+
+            : null;
+
+
+    let parsedMinBudget = null;
+    let parsedMaxBudget = null;
+
+
+    if (
+        min_budget !==
+            undefined &&
+        min_budget !==
+            ''
+    ) {
+        parsedMinBudget =
+            parseFloat(
+                min_budget
+            );
+
+
+        if (
+            !Number.isFinite(
+                parsedMinBudget
+            )
+        ) {
+            parsedMinBudget =
+                null;
+        }
+    }
+
+
+    if (
+        max_budget !==
+            undefined &&
+        max_budget !==
+            ''
+    ) {
+        parsedMaxBudget =
+            parseFloat(
+                max_budget
+            );
+
+
+        if (
+            !Number.isFinite(
+                parsedMaxBudget
+            )
+        ) {
+            parsedMaxBudget =
+                null;
+        }
+    }
+
 
     const jugaads =
         await jugaadRepository.findDiscoverableJugaads(
             {
-                currentUserId: user.id,
+                currentUserId:
+                    user.id,
 
                 userCollegeId:
                     user.college_id,
 
-                collegeId: college_id
-                    ? parseInt(
-                          college_id,
-                          10
-                      )
-                    : null,
+                collegeId:
+                    college_id
+                        ? parseInt(
+                              college_id,
+                              10
+                          )
+                        : null,
 
-                category: category
-                    ? String(category).trim()
-                    : null,
+                category:
+                    category
+                        ? String(
+                              category
+                          ).trim()
+                        : null,
 
-                skills: skillsArray,
+                skills:
+                    skillsArray,
 
-                search: search
-                    ? String(search).trim()
-                    : null,
+                search:
+                    search
+                        ? String(
+                              search
+                          ).trim()
+                        : null,
 
                 minBudget:
-                    min_budget
-                        ? parseFloat(min_budget)
-                        : null,
+                    parsedMinBudget,
 
                 maxBudget:
-                    max_budget
-                        ? parseFloat(max_budget)
-                        : null,
+                    parsedMaxBudget,
 
-                limit: parsedLimit,
+                limit:
+                    parsedLimit,
+
                 offset
             }
         );
 
+
     return {
-        page: parsedPage,
-        limit: parsedLimit,
-        count: jugaads.length,
-        data: jugaads
+        page:
+            parsedPage,
+
+        limit:
+            parsedLimit,
+
+        count:
+            jugaads.length,
+
+        data:
+            jugaads
     };
 };
 
 
-/**
- * ============================================================
- * MARK NOT INTERESTED
- * ============================================================
- */
+// ================================================================
+// MARK NOT INTERESTED
+// ================================================================
 
 export const markNotInterested = async (
     userId,
     jugaadId
 ) => {
+
     const jugaad =
         await jugaadRepository.findJugaadById(
             jugaadId
         );
 
+
     if (!jugaad) {
-        const error = new Error(
-            'Jugaad not found.'
-        );
+        const error =
+            new Error(
+                'Jugaad not found.'
+            );
+
         error.statusCode = 404;
+
         throw error;
     }
+
 
     if (
         jugaad.poster_id.toString() ===
         userId.toString()
     ) {
-        const error = new Error(
-            'You cannot mark your own Jugaad as not interested.'
-        );
+        const error =
+            new Error(
+                'You cannot mark your own Jugaad as not interested.'
+            );
+
         error.statusCode = 400;
+
         throw error;
     }
+
 
     await jugaadRepository.markNotInterested(
         userId,
         jugaadId
     );
 
+
     return {
-        success: true,
+        success:
+            true,
+
         message:
             'Jugaad marked as not interested. It will no longer be recommended to you.'
     };
 };
 
 
-/**
- * ============================================================
- * EXPRESS INTEREST
- * ============================================================
- *
- * IMPORTANT:
- *
- * Previously this function only returned a success message.
- *
- * That meant:
- *
- * Student clicks INTERESTED
- *          ↓
- * Backend says "Interest noted"
- *          ↓
- * NOTHING saved in jugaad_proposals
- *          ↓
- * My Jugaads shows 0 requests
- *
- * Now we actually create a proposal.
- */
+// ================================================================
+// EXPRESS INTEREST
+// ================================================================
+//
+// IMPORTANT:
+//
+// Student clicks INTERESTED
+//          ↓
+// Create proposal
+//          ↓
+// NO conversation
+// NO message
+//
+// Poster accepts proposal
+//          ↓
+// Conversation is created/reused
+//
+// ================================================================
 
 export const expressInterest = async (
     userId,
     jugaadId,
-    proposalMessage = 'I am interested in helping with this Jugaad.',
+    proposalMessage =
+        'I am interested in helping with this Jugaad.',
     proposedPrice = null
 ) => {
+
     const jugaad =
         await jugaadRepository.findJugaadById(
             jugaadId
         );
 
+
     if (!jugaad) {
-        const error = new Error(
-            'Jugaad not found.'
-        );
+        const error =
+            new Error(
+                'Jugaad not found.'
+            );
+
         error.statusCode = 404;
+
         throw error;
     }
 
-    /**
-     * Creator cannot express interest
-     * in their own Jugaad.
-     */
+
+    // ------------------------------------------------------------
+    // Creator cannot express interest
+    // ------------------------------------------------------------
+
     if (
         jugaad.poster_id.toString() ===
         userId.toString()
     ) {
-        const error = new Error(
-            'You cannot express interest in your own Jugaad.'
-        );
+        const error =
+            new Error(
+                'You cannot express interest in your own Jugaad.'
+            );
+
         error.statusCode = 400;
+
         throw error;
     }
 
-    /**
-     * Only open Jugaads can receive
-     * new interested students.
-     */
-    if (jugaad.status !== 'open') {
-        const error = new Error(
-            `Cannot express interest in a Jugaad that is '${jugaad.status}'.`
-        );
-        error.statusCode = 400;
-        throw error;
-    }
 
-    /**
-     * If frontend doesn't send a price,
-     * use the original Jugaad budget.
-     */
-    const finalPrice =
-        proposedPrice !== null &&
-        proposedPrice !== undefined &&
-        proposedPrice !== ''
-            ? parseFloat(proposedPrice)
-            : parseFloat(jugaad.budget);
+    // ------------------------------------------------------------
+    // Only open Jugaads can receive interest
+    // ------------------------------------------------------------
 
     if (
-        !Number.isFinite(finalPrice) ||
-        finalPrice <= 0
+        jugaad.status !==
+        'open'
     ) {
-        const error = new Error(
-            'A valid proposed price is required.'
-        );
+        const error =
+            new Error(
+                `Cannot express interest in a Jugaad that is '${jugaad.status}'.`
+            );
+
         error.statusCode = 400;
+
         throw error;
     }
 
-    /**
-     * Create actual proposal record.
-     */
+
+    // ------------------------------------------------------------
+    // Determine proposed price
+    // ------------------------------------------------------------
+
+    const finalPrice =
+        proposedPrice !== null &&
+        proposedPrice !==
+            undefined &&
+        proposedPrice !== ''
+
+            ? parseFloat(
+                  proposedPrice
+              )
+
+            : parseFloat(
+                  jugaad.budget
+              );
+
+
+    if (
+        !Number.isFinite(
+            finalPrice
+        ) ||
+        finalPrice <= 0
+    ) {
+        const error =
+            new Error(
+                'A valid proposed price is required.'
+            );
+
+        error.statusCode = 400;
+
+        throw error;
+    }
+
+
+    // ------------------------------------------------------------
+    // Create proposal ONLY
+    //
+    // IMPORTANT:
+    // createInterestProposal() must only insert into
+    // jugaad_proposals.
+    //
+    // It must NOT create:
+    // conversations
+    // messages
+    // conversation_participants
+    // ------------------------------------------------------------
+
     const proposal =
         await jugaadRepository.createInterestProposal(
             userId,
@@ -482,13 +833,16 @@ export const expressInterest = async (
             finalPrice
         );
 
+
     return {
-        success: true,
+        success:
+            true,
 
         message:
             'Interest noted! Your request has been sent to the Jugaad poster.',
 
-        jugaad_id: jugaad.id,
+        jugaad_id:
+            jugaad.id,
 
         jugaad_title:
             jugaad.title,
@@ -504,45 +858,51 @@ export const expressInterest = async (
 };
 
 
-/**
- * ============================================================
- * GET PROPOSALS FOR A JUGAAD
- * ============================================================
- *
- * This is what the My Jugaads page should use.
- */
+// ================================================================
+// GET PROPOSALS FOR A JUGAAD
+// ================================================================
+//
+// Only the poster can view proposals/requests.
+// Conversation access is NOT created here.
+// ================================================================
 
 export const getProposalsForJugaad = async (
     jugaadId,
     posterId
 ) => {
+
     const jugaad =
         await jugaadRepository.findJugaadById(
             jugaadId
         );
 
+
     if (!jugaad) {
-        const error = new Error(
-            'Jugaad not found.'
-        );
+        const error =
+            new Error(
+                'Jugaad not found.'
+            );
+
         error.statusCode = 404;
+
         throw error;
     }
 
-    /**
-     * Only the creator of the Jugaad
-     * can see interested students.
-     */
+
     if (
         jugaad.poster_id.toString() !==
         posterId.toString()
     ) {
-        const error = new Error(
-            'Unauthorized: Only the creator can view interested students.'
-        );
+        const error =
+            new Error(
+                'Unauthorized: Only the creator can view interested students.'
+            );
+
         error.statusCode = 403;
+
         throw error;
     }
+
 
     return await jugaadRepository.findProposalsForJugaad(
         jugaadId,
