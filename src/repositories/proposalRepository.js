@@ -4,6 +4,13 @@ import pool from '../config/db.js';
 // ================================================================
 // CREATE PROPOSAL
 // ================================================================
+//
+// IMPORTANT:
+// Creating a proposal DOES NOT create a conversation.
+//
+// Conversation is created/reused only after the poster accepts
+// the proposal.
+// ================================================================
 
 export const createProposal = async ({
     jugaadId,
@@ -12,238 +19,45 @@ export const createProposal = async ({
     proposedPrice,
     estimatedCompletion = null
 }) => {
-    const client = await pool.connect();
 
-    try {
-        await client.query('BEGIN');
+    const query = `
+        INSERT INTO jugaad_proposals (
+            jugaad_id,
+            helper_id,
+            proposal_message,
+            proposed_price,
+            estimated_completion,
+            status
+        )
 
-        // ============================================================
-        // 1. CREATE PROPOSAL
-        // ============================================================
+        VALUES (
+            $1,
+            $2,
+            $3,
+            $4,
+            $5,
+            'pending'
+        )
 
-        const proposalQuery = `
-            INSERT INTO jugaad_proposals (
-                jugaad_id,
-                helper_id,
-                proposal_message,
-                proposed_price,
-                estimated_completion,
-                status
-            )
-            VALUES (
-                $1,
-                $2,
-                $3,
-                $4,
-                $5,
-                'pending'
-            )
-            RETURNING *;
-        `;
+        RETURNING *;
+    `;
 
-        const proposalValues = [
-            jugaadId,
-            helperId,
-            proposalMessage,
-            proposedPrice,
-            estimatedCompletion
-        ];
+    const values = [
+        jugaadId,
+        helperId,
+        proposalMessage,
+        proposedPrice,
+        estimatedCompletion
+    ];
 
-        const {
-            rows: proposalRows
-        } = await client.query(
-            proposalQuery,
-            proposalValues
-        );
+    const {
+        rows
+    } = await pool.query(
+        query,
+        values
+    );
 
-        const proposal =
-            proposalRows[0];
-
-        // ============================================================
-        // 2. GET THE POSTER OF THE JUGAAD
-        // ============================================================
-
-        const posterQuery = `
-            SELECT
-                poster_id
-            FROM jugaads
-            WHERE id = $1;
-        `;
-
-        const {
-            rows: posterRows
-        } = await client.query(
-            posterQuery,
-            [jugaadId]
-        );
-
-        if (
-            posterRows.length === 0
-        ) {
-            const error =
-                new Error(
-                    'Jugaad not found.'
-                );
-
-            error.statusCode = 404;
-
-            throw error;
-        }
-
-        const posterId =
-            posterRows[0].poster_id;
-
-        // ============================================================
-        // 3. CREATE OR REUSE CONVERSATION
-        // ============================================================
-        //
-        // ONE conversation per:
-        //
-        // poster_id + helper_id
-        //
-        // If Ruchika and Ishita already have a conversation,
-        // every new Jugaad between them uses the SAME conversation.
-        //
-
-        const conversationQuery = `
-            INSERT INTO conversations (
-                poster_id,
-                helper_id,
-                jugaad_id,
-                proposal_id
-            )
-            VALUES (
-                $1,
-                $2,
-                $3,
-                $4
-            )
-            ON CONFLICT (
-                poster_id,
-                helper_id
-            )
-            DO UPDATE SET
-                jugaad_id =
-                    EXCLUDED.jugaad_id,
-
-                proposal_id =
-                    EXCLUDED.proposal_id
-
-            RETURNING *;
-        `;
-
-        const {
-            rows: conversationRows
-        } = await client.query(
-            conversationQuery,
-            [
-                posterId,
-                helperId,
-                jugaadId,
-                proposal.id
-            ]
-        );
-
-        const conversation =
-            conversationRows[0];
-
-        // ============================================================
-        // 4. ADD POSTER + HELPER AS PARTICIPANTS
-        // ============================================================
-
-        const participantsQuery = `
-            INSERT INTO conversation_participants (
-                conversation_id,
-                user_id
-            )
-            VALUES
-                ($1, $2),
-                ($1, $3)
-
-            ON CONFLICT (
-                conversation_id,
-                user_id
-            )
-            DO NOTHING;
-        `;
-
-        await client.query(
-            participantsQuery,
-            [
-                conversation.id,
-                posterId,
-                helperId
-            ]
-        );
-
-        // ============================================================
-        // 5. CREATE INITIAL PROPOSAL MESSAGE
-        // ============================================================
-        //
-        // IMPORTANT:
-        // Store jugaad_id on the message so one conversation can
-        // contain messages belonging to many different Jugaads.
-        //
-
-        const messageQuery = `
-            INSERT INTO messages (
-                conversation_id,
-                sender_id,
-                jugaad_id,
-                content
-            )
-            VALUES (
-                $1,
-                $2,
-                $3,
-                $4
-            )
-            RETURNING *;
-        `;
-
-        const {
-            rows: messageRows
-        } = await client.query(
-            messageQuery,
-            [
-                conversation.id,
-                helperId,
-                jugaadId,
-                proposalMessage
-            ]
-        );
-
-        const message =
-            messageRows[0];
-
-        // ============================================================
-        // 6. COMMIT
-        // ============================================================
-
-        await client.query(
-            'COMMIT'
-        );
-
-        return {
-            ...proposal,
-            conversation_id:
-                conversation.id,
-            message_id:
-                message.id
-        };
-
-    } catch (error) {
-
-        await client.query(
-            'ROLLBACK'
-        );
-
-        throw error;
-
-    } finally {
-
-        client.release();
-    }
+    return rows[0];
 };
 
 
@@ -286,10 +100,21 @@ export const findProposalById = async (
             ON poster.id = j.poster_id
 
         LEFT JOIN conversations c
-            ON c.poster_id = j.poster_id
-            AND c.helper_id = p.helper_id
+            ON c.user_one_id =
+                LEAST(
+                    j.poster_id,
+                    p.helper_id
+                )
 
-        WHERE p.id = $1;
+            AND c.user_two_id =
+                GREATEST(
+                    j.poster_id,
+                    p.helper_id
+                )
+
+        WHERE p.id = $1
+
+        LIMIT 1;
     `;
 
     const {
@@ -299,7 +124,7 @@ export const findProposalById = async (
         [id]
     );
 
-    return rows[0];
+    return rows[0] || null;
 };
 
 
@@ -316,7 +141,8 @@ export const findProposalByJugaadAndHelper = async (
         SELECT *
         FROM jugaad_proposals
         WHERE jugaad_id = $1
-          AND helper_id = $2;
+          AND helper_id = $2
+        LIMIT 1;
     `;
 
     const {
@@ -329,7 +155,7 @@ export const findProposalByJugaadAndHelper = async (
         ]
     );
 
-    return rows[0];
+    return rows[0] || null;
 };
 
 
@@ -374,8 +200,17 @@ export const findProposalsByJugaadId = async (
             ON j.id = p.jugaad_id
 
         LEFT JOIN conversations c
-            ON c.poster_id = j.poster_id
-            AND c.helper_id = p.helper_id
+            ON c.user_one_id =
+                LEAST(
+                    j.poster_id,
+                    p.helper_id
+                )
+
+            AND c.user_two_id =
+                GREATEST(
+                    j.poster_id,
+                    p.helper_id
+                )
 
         LEFT JOIN LATERAL (
             SELECT
@@ -383,9 +218,14 @@ export const findProposalsByJugaadId = async (
                 message,
                 offered_by,
                 status
+
             FROM proposal_counter_offers
+
             WHERE proposal_id = p.id
-            ORDER BY created_at DESC
+
+            ORDER BY
+                created_at DESC
+
             LIMIT 1
         ) co ON TRUE
 
@@ -447,17 +287,31 @@ export const findMyProposals = async (
             ON poster.id = j.poster_id
 
         LEFT JOIN conversations c
-            ON c.poster_id = j.poster_id
-            AND c.helper_id = p.helper_id
+            ON c.user_one_id =
+                LEAST(
+                    j.poster_id,
+                    p.helper_id
+                )
+
+            AND c.user_two_id =
+                GREATEST(
+                    j.poster_id,
+                    p.helper_id
+                )
 
         LEFT JOIN LATERAL (
             SELECT
                 amount,
                 message,
                 offered_by
+
             FROM proposal_counter_offers
+
             WHERE proposal_id = p.id
-            ORDER BY created_at DESC
+
+            ORDER BY
+                created_at DESC
+
             LIMIT 1
         ) co ON TRUE
 
@@ -521,17 +375,31 @@ export const findReceivedProposals = async (
             ON helper.id = p.helper_id
 
         LEFT JOIN conversations c
-            ON c.poster_id = j.poster_id
-            AND c.helper_id = p.helper_id
+            ON c.user_one_id =
+                LEAST(
+                    j.poster_id,
+                    p.helper_id
+                )
+
+            AND c.user_two_id =
+                GREATEST(
+                    j.poster_id,
+                    p.helper_id
+                )
 
         LEFT JOIN LATERAL (
             SELECT
                 amount,
                 message,
                 offered_by
+
             FROM proposal_counter_offers
+
             WHERE proposal_id = p.id
-            ORDER BY created_at DESC
+
+            ORDER BY
+                created_at DESC
+
             LIMIT 1
         ) co ON TRUE
 
@@ -555,6 +423,9 @@ export const findReceivedProposals = async (
 // ================================================================
 // ACCEPT PROPOSAL TRANSACTION
 // ================================================================
+//
+// THIS is where the conversation is created/reused.
+// ================================================================
 
 export const acceptProposalTransaction = async (
     proposalId,
@@ -569,6 +440,7 @@ export const acceptProposalTransaction = async (
         await client.query(
             'BEGIN'
         );
+
 
         // ============================================================
         // 1. GET PROPOSAL + JUGAAD
@@ -599,6 +471,7 @@ export const acceptProposalTransaction = async (
             [proposalId]
         );
 
+
         if (
             propRows.length === 0
         ) {
@@ -612,6 +485,7 @@ export const acceptProposalTransaction = async (
 
             throw err;
         }
+
 
         const proposal =
             propRows[0];
@@ -638,7 +512,7 @@ export const acceptProposalTransaction = async (
 
 
         // ============================================================
-        // 3. CHECK PROPOSAL STATUS
+        // 3. PROPOSAL MUST BE PENDING
         // ============================================================
 
         if (
@@ -658,7 +532,7 @@ export const acceptProposalTransaction = async (
 
 
         // ============================================================
-        // 4. CHECK JUGAAD STATUS
+        // 4. JUGAAD MUST BE OPEN
         // ============================================================
 
         if (
@@ -685,11 +559,8 @@ export const acceptProposalTransaction = async (
             UPDATE jugaad_proposals
 
             SET
-                status =
-                    'accepted',
-
-                updated_at =
-                    CURRENT_TIMESTAMP
+                status = 'accepted',
+                updated_at = CURRENT_TIMESTAMP
 
             WHERE id = $1
 
@@ -716,14 +587,9 @@ export const acceptProposalTransaction = async (
             UPDATE jugaads
 
             SET
-                status =
-                    'assigned',
-
-                helper_id =
-                    $1,
-
-                updated_at =
-                    CURRENT_TIMESTAMP
+                status = 'assigned',
+                helper_id = $1,
+                updated_at = CURRENT_TIMESTAMP
 
             WHERE id = $2
 
@@ -753,11 +619,8 @@ export const acceptProposalTransaction = async (
             UPDATE jugaad_proposals
 
             SET
-                status =
-                    'rejected',
-
-                updated_at =
-                    CURRENT_TIMESTAMP
+                status = 'rejected',
+                updated_at = CURRENT_TIMESTAMP
 
             WHERE jugaad_id = $1
               AND id != $2
@@ -784,34 +647,32 @@ export const acceptProposalTransaction = async (
         // 8. CREATE OR REUSE ONE CONVERSATION
         // ============================================================
         //
-        // IMPORTANT:
+        // Normalize the pair so:
         //
-        // We use:
+        // 1 + 2
+        // 2 + 1
         //
-        // poster_id + helper_id
-        //
-        // NOT:
-        //
-        // jugaad_id + proposal_id
+        // always mean the same conversation.
         //
 
         const createConvQuery = `
             INSERT INTO conversations (
-                poster_id,
-                helper_id,
+                user_one_id,
+                user_two_id,
                 jugaad_id,
                 proposal_id
             )
+
             VALUES (
-                $1,
-                $2,
+                LEAST($1, $2),
+                GREATEST($1, $2),
                 $3,
                 $4
             )
 
             ON CONFLICT (
-                poster_id,
-                helper_id
+                user_one_id,
+                user_two_id
             )
 
             DO UPDATE SET
@@ -825,7 +686,8 @@ export const acceptProposalTransaction = async (
         `;
 
         const {
-            rows: convRows
+            rows:
+                convRows
         } = await client.query(
             createConvQuery,
             [
@@ -997,11 +859,8 @@ export const rejectProposal = async (
         UPDATE jugaad_proposals p
 
         SET
-            status =
-                'rejected',
-
-            updated_at =
-                CURRENT_TIMESTAMP
+            status = 'rejected',
+            updated_at = CURRENT_TIMESTAMP
 
         FROM jugaads j
 
@@ -1025,7 +884,7 @@ export const rejectProposal = async (
         ]
     );
 
-    return rows[0];
+    return rows[0] || null;
 };
 
 
@@ -1042,11 +901,8 @@ export const withdrawProposal = async (
         UPDATE jugaad_proposals p
 
         SET
-            status =
-                'withdrawn',
-
-            updated_at =
-                CURRENT_TIMESTAMP
+            status = 'withdrawn',
+            updated_at = CURRENT_TIMESTAMP
 
         FROM jugaads j
 
@@ -1071,7 +927,7 @@ export const withdrawProposal = async (
         ]
     );
 
-    return rows[0];
+    return rows[0] || null;
 };
 
 
@@ -1086,17 +942,12 @@ export const createCounterOffer = async ({
     message = null
 }) => {
 
-    // ============================================================
-    // Mark previous pending offers as countered
-    // ============================================================
-
     await pool.query(
         `
             UPDATE proposal_counter_offers
 
             SET
-                status =
-                    'countered'
+                status = 'countered'
 
             WHERE proposal_id = $1
               AND status = 'pending'
@@ -1104,10 +955,6 @@ export const createCounterOffer = async ({
         [proposalId]
     );
 
-
-    // ============================================================
-    // Create new counter offer
-    // ============================================================
 
     const query = `
         INSERT INTO proposal_counter_offers (
@@ -1156,7 +1003,6 @@ export const findCounterOffersByProposalId = async (
     const query = `
         SELECT
             co.*,
-
             u.name AS offered_by_name
 
         FROM proposal_counter_offers co
