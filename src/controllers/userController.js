@@ -7,23 +7,35 @@ import { z } from 'zod';
 // ================================================================
 
 const registerSchema = z.object({
+
     name: z
         .string()
-        .min(2, 'Name must be of atleast two character'),
+        .min(
+            2,
+            'Name must be of atleast two character'
+        ),
 
     email: z
         .string()
-        .email('Please provide valid email')
+        .email(
+            'Please provide valid email'
+        )
         .toLowerCase()
         .trim(),
 
     password: z
         .string()
-        .min(6, 'Password must be atleast 6 characters'),
+        .min(
+            6,
+            'Password must be atleast 6 characters'
+        ),
 
     number: z
         .string()
-        .length(10),
+        .length(
+            10,
+            'Phone number must contain exactly 10 digits'
+        ),
 
     location: z
         .string()
@@ -33,35 +45,70 @@ const registerSchema = z.object({
         required_error:
             'College ID is required and must be a number'
     })
+
 });
 
 
-export const register = async (req, res, next) => {
+export const register = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         const validation =
-            registerSchema.safeParse(req.body);
+            registerSchema.safeParse(
+                req.body
+            );
+
 
         if (!validation.success) {
+
             const firstErrorMessage =
-                validation.error.issues[0]?.message ||
+                validation.error
+                    .issues[0]
+                    ?.message ||
                 'Validation failed';
 
+
             return res.status(400).json({
-                error: firstErrorMessage
+
+                success: false,
+
+                error:
+                    firstErrorMessage
+
             });
         }
 
-        const cleanData = validation.data;
+
+        const cleanData =
+            validation.data;
+
 
         const newUser =
-            await userService.registerUser(cleanData);
+            await userService.registerUser(
+                cleanData
+            );
+
 
         return res.status(201).json({
-            message: 'User Registered successfully',
-            data: newUser
+
+            success: true,
+
+            message:
+                'User Registered successfully',
+
+            data:
+                newUser
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
@@ -71,53 +118,101 @@ export const register = async (req, res, next) => {
 // ================================================================
 
 const loginSchema = z.object({
+
     email: z
         .string()
-        .email('Please provide the valid email')
+        .email(
+            'Please provide the valid email'
+        )
         .toLowerCase()
         .trim(),
 
     password: z
         .string()
-        .min(6, 'Password must be at least 6 characters')
+        .min(
+            6,
+            'Password must be at least 6 characters'
+        )
+
 });
 
 
-export const login = async (req, res, next) => {
+export const login = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         const validation =
-            loginSchema.safeParse(req.body);
+            loginSchema.safeParse(
+                req.body
+            );
+
 
         if (!validation.success) {
+
             return res.status(400).json({
+
+                success: false,
+
                 error:
-                    validation.error.issues[0]?.message ||
+                    validation.error
+                        .issues[0]
+                        ?.message ||
                     'Invalid login data'
+
             });
         }
 
-        const cleanData = validation.data;
+
+        const cleanData =
+            validation.data;
+
 
         const result =
-            await userService.loginUser(cleanData);
+            await userService.loginUser(
+                cleanData
+            );
+
 
         if (
             !result.success &&
-            result.message === 'INVALID_CREDENTIALS'
+            result.message ===
+                'INVALID_CREDENTIALS'
         ) {
+
             return res.status(401).json({
+
+                success: false,
+
                 error:
                     'Invalid email or password credentials.'
+
             });
         }
 
+
         return res.status(200).json({
-            message: 'Login successful',
-            token: result.token,
-            user: result.user
+
+            success: true,
+
+            message:
+                'Login successful',
+
+            token:
+                result.token,
+
+            user:
+                result.user
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
@@ -126,14 +221,27 @@ export const login = async (req, res, next) => {
 // GET PROFILE
 // ================================================================
 
-export const getProfile = async (req, res, next) => {
+export const getProfile = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         return res.status(200).json({
+
             success: true,
-            data: req.user
+
+            data:
+                req.user
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
@@ -143,15 +251,24 @@ export const getProfile = async (req, res, next) => {
 // ================================================================
 
 const updateProfileSchema = z.object({
+
     name: z
         .string()
-        .min(2, 'Name must be at least 2 characters')
-        .max(100, 'Name is too long')
+        .min(
+            2,
+            'Name must be at least 2 characters'
+        )
+        .max(
+            100,
+            'Name is too long'
+        )
         .trim(),
 
     email: z
         .string()
-        .email('Please provide a valid email')
+        .email(
+            'Please provide a valid email'
+        )
         .toLowerCase()
         .trim(),
 
@@ -164,7 +281,10 @@ const updateProfileSchema = z.object({
 
     location: z
         .string()
-        .max(200, 'Location is too long')
+        .max(
+            200,
+            'Location is too long'
+        )
         .optional()
         .default(''),
 
@@ -172,37 +292,257 @@ const updateProfileSchema = z.object({
         required_error:
             'College ID is required and must be a number'
     })
+
 });
 
 
-export const updateProfile = async (req, res, next) => {
+export const updateProfile = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         const validation =
-            updateProfileSchema.safeParse(req.body);
+            updateProfileSchema.safeParse(
+                req.body
+            );
+
 
         if (!validation.success) {
+
             return res.status(400).json({
+
+                success: false,
+
                 error:
-                    validation.error.issues[0]?.message ||
+                    validation.error
+                        .issues[0]
+                        ?.message ||
                     'Invalid profile data'
+
             });
         }
 
-        const cleanData = validation.data;
+
+        const cleanData =
+            validation.data;
+
 
         const updatedUser =
             await userService.updateUserProfile(
+
                 req.user.id,
+
                 cleanData
+
             );
 
+
         return res.status(200).json({
+
             success: true,
-            message: 'Profile updated successfully',
-            data: updatedUser
+
+            message:
+                'Profile updated successfully',
+
+            data:
+                updatedUser
+
         });
+
     } catch (error) {
+
         return next(error);
+
+    }
+};
+
+
+// ================================================================
+// CHANGE PASSWORD
+// ================================================================
+
+const changePasswordSchema =
+    z.object({
+
+        currentPassword: z
+            .string()
+            .min(
+                1,
+                'Current password is required'
+            ),
+
+        newPassword: z
+            .string()
+            .min(
+                6,
+                'New password must be at least 6 characters'
+            ),
+
+        confirmPassword: z
+            .string()
+            .min(
+                1,
+                'Please confirm your new password'
+            )
+
+    });
+
+
+export const changePassword = async (
+    req,
+    res,
+    next
+) => {
+
+    try {
+
+        const validation =
+            changePasswordSchema.safeParse(
+                req.body
+            );
+
+
+        if (!validation.success) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                error:
+                    validation.error
+                        .issues[0]
+                        ?.message ||
+                    'Invalid password data'
+
+            });
+        }
+
+
+        const {
+            currentPassword,
+            newPassword,
+            confirmPassword
+        } = validation.data;
+
+
+        if (
+            newPassword !==
+            confirmPassword
+        ) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                error:
+                    'New passwords do not match'
+
+            });
+        }
+
+
+        const result =
+            await userService.changePassword(
+
+                req.user.id,
+
+                currentPassword,
+
+                newPassword
+
+            );
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            message:
+                result.message
+
+        });
+
+    } catch (error) {
+
+        return next(error);
+
+    }
+};
+
+
+// ================================================================
+// DELETE ACCOUNT
+// ================================================================
+
+const deleteAccountSchema =
+    z.object({
+
+        password: z
+            .string()
+            .min(
+                1,
+                'Password is required'
+            )
+
+    });
+
+
+export const deleteAccount = async (
+    req,
+    res,
+    next
+) => {
+
+    try {
+
+        const validation =
+            deleteAccountSchema.safeParse(
+                req.body
+            );
+
+
+        if (!validation.success) {
+
+            return res.status(400).json({
+
+                success: false,
+
+                error:
+                    validation.error
+                        .issues[0]
+                        ?.message ||
+                    'Password is required'
+
+            });
+        }
+
+
+        const result =
+            await userService.deleteUserAccount(
+
+                req.user.id,
+
+                validation.data.password
+
+            );
+
+
+        return res.status(200).json({
+
+            success: true,
+
+            message:
+                result.message
+
+        });
+
+    } catch (error) {
+
+        return next(error);
+
     }
 };
 
@@ -212,117 +552,227 @@ export const updateProfile = async (req, res, next) => {
 // ================================================================
 
 const skillSchema = z.object({
+
     name: z
         .string()
-        .min(1, 'Skill name is required')
-        .max(100, 'Skill name is too long')
+        .min(
+            1,
+            'Skill name is required'
+        )
+        .max(
+            100,
+            'Skill name is too long'
+        )
         .trim(),
 
     category: z
         .string()
-        .max(50, 'Skill category is too long')
+        .max(
+            50,
+            'Skill category is too long'
+        )
         .optional()
         .default(''),
 
     level: z
         .string()
-        .max(50, 'Skill level is too long')
+        .max(
+            50,
+            'Skill level is too long'
+        )
         .optional()
         .default('')
+
 });
 
 
-export const getSkills = async (req, res, next) => {
+export const getSkills = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         const skills =
-            await userService.getSkills(req.user.id);
+            await userService.getSkills(
+                req.user.id
+            );
+
 
         return res.status(200).json({
+
             success: true,
-            data: skills
+
+            data:
+                skills
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
 
-export const addSkill = async (req, res, next) => {
+export const addSkill = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         const validation =
-            skillSchema.safeParse(req.body);
+            skillSchema.safeParse(
+                req.body
+            );
+
 
         if (!validation.success) {
+
             return res.status(400).json({
+
+                success: false,
+
                 error:
-                    validation.error.issues[0]?.message ||
+                    validation.error
+                        .issues[0]
+                        ?.message ||
                     'Invalid skill data'
+
             });
         }
+
 
         const skill =
             await userService.addSkill(
+
                 req.user.id,
+
                 validation.data
+
             );
 
+
         return res.status(201).json({
+
             success: true,
-            message: 'Skill added successfully',
-            data: skill
+
+            message:
+                'Skill added successfully',
+
+            data:
+                skill
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
 
-export const updateSkill = async (req, res, next) => {
+export const updateSkill = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         const validation =
-            skillSchema.safeParse(req.body);
+            skillSchema.safeParse(
+                req.body
+            );
+
 
         if (!validation.success) {
+
             return res.status(400).json({
+
+                success: false,
+
                 error:
-                    validation.error.issues[0]?.message ||
+                    validation.error
+                        .issues[0]
+                        ?.message ||
                     'Invalid skill data'
+
             });
         }
 
+
         const skill =
             await userService.updateSkill(
+
                 req.user.id,
+
                 req.params.id,
+
                 validation.data
+
             );
 
+
         return res.status(200).json({
+
             success: true,
-            message: 'Skill updated successfully',
-            data: skill
+
+            message:
+                'Skill updated successfully',
+
+            data:
+                skill
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
 
-export const deleteSkill = async (req, res, next) => {
+export const deleteSkill = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         const result =
             await userService.deleteSkill(
+
                 req.user.id,
+
                 req.params.id
+
             );
 
+
         return res.status(200).json({
+
             success: true,
-            message: 'Skill deleted successfully',
-            data: result
+
+            message:
+                'Skill deleted successfully',
+
+            data:
+                result
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
@@ -332,110 +782,217 @@ export const deleteSkill = async (req, res, next) => {
 // ================================================================
 
 const linkSchema = z.object({
+
     platform: z
         .string()
-        .min(1, 'Platform name is required')
-        .max(50, 'Platform name is too long')
+        .min(
+            1,
+            'Platform name is required'
+        )
+        .max(
+            50,
+            'Platform name is too long'
+        )
         .trim(),
 
     url: z
         .string()
-        .min(1, 'Profile URL is required')
+        .min(
+            1,
+            'Profile URL is required'
+        )
         .trim()
+
 });
 
 
-export const getLinks = async (req, res, next) => {
+export const getLinks = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         const links =
-            await userService.getLinks(req.user.id);
+            await userService.getLinks(
+                req.user.id
+            );
+
 
         return res.status(200).json({
+
             success: true,
-            data: links
+
+            data:
+                links
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
 
-export const addLink = async (req, res, next) => {
+export const addLink = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         const validation =
-            linkSchema.safeParse(req.body);
+            linkSchema.safeParse(
+                req.body
+            );
+
 
         if (!validation.success) {
+
             return res.status(400).json({
+
+                success: false,
+
                 error:
-                    validation.error.issues[0]?.message ||
+                    validation.error
+                        .issues[0]
+                        ?.message ||
                     'Invalid link data'
+
             });
         }
+
 
         const link =
             await userService.addLink(
+
                 req.user.id,
+
                 validation.data
+
             );
 
+
         return res.status(201).json({
+
             success: true,
-            message: 'Link added successfully',
-            data: link
+
+            message:
+                'Link added successfully',
+
+            data:
+                link
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
 
-export const updateLink = async (req, res, next) => {
+export const updateLink = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         const validation =
-            linkSchema.safeParse(req.body);
+            linkSchema.safeParse(
+                req.body
+            );
+
 
         if (!validation.success) {
+
             return res.status(400).json({
+
+                success: false,
+
                 error:
-                    validation.error.issues[0]?.message ||
+                    validation.error
+                        .issues[0]
+                        ?.message ||
                     'Invalid link data'
+
             });
         }
 
+
         const link =
             await userService.updateLink(
+
                 req.user.id,
+
                 req.params.id,
+
                 validation.data
+
             );
 
+
         return res.status(200).json({
+
             success: true,
-            message: 'Link updated successfully',
-            data: link
+
+            message:
+                'Link updated successfully',
+
+            data:
+                link
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
 
-export const deleteLink = async (req, res, next) => {
+export const deleteLink = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         const result =
             await userService.deleteLink(
+
                 req.user.id,
+
                 req.params.id
+
             );
 
+
         return res.status(200).json({
+
             success: true,
-            message: 'Link deleted successfully',
-            data: result
+
+            message:
+                'Link deleted successfully',
+
+            data:
+                result
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
@@ -445,10 +1002,17 @@ export const deleteLink = async (req, res, next) => {
 // ================================================================
 
 const projectSchema = z.object({
+
     name: z
         .string()
-        .min(1, 'Project name is required')
-        .max(150, 'Project name is too long')
+        .min(
+            1,
+            'Project name is required'
+        )
+        .max(
+            150,
+            'Project name is too long'
+        )
         .trim(),
 
     description: z
@@ -470,100 +1034,197 @@ const projectSchema = z.object({
         .string()
         .optional()
         .default('')
+
 });
 
 
-export const getProjects = async (req, res, next) => {
+export const getProjects = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         const projects =
-            await userService.getProjects(req.user.id);
+            await userService.getProjects(
+                req.user.id
+            );
+
 
         return res.status(200).json({
+
             success: true,
-            data: projects
+
+            data:
+                projects
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
 
-export const addProject = async (req, res, next) => {
+export const addProject = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         const validation =
-            projectSchema.safeParse(req.body);
+            projectSchema.safeParse(
+                req.body
+            );
+
 
         if (!validation.success) {
+
             return res.status(400).json({
+
+                success: false,
+
                 error:
-                    validation.error.issues[0]?.message ||
+                    validation.error
+                        .issues[0]
+                        ?.message ||
                     'Invalid project data'
+
             });
         }
+
 
         const project =
             await userService.addProject(
+
                 req.user.id,
+
                 validation.data
+
             );
 
+
         return res.status(201).json({
+
             success: true,
-            message: 'Project added successfully',
-            data: project
+
+            message:
+                'Project added successfully',
+
+            data:
+                project
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
 
-export const updateProject = async (req, res, next) => {
+export const updateProject = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         const validation =
-            projectSchema.safeParse(req.body);
+            projectSchema.safeParse(
+                req.body
+            );
+
 
         if (!validation.success) {
+
             return res.status(400).json({
+
+                success: false,
+
                 error:
-                    validation.error.issues[0]?.message ||
+                    validation.error
+                        .issues[0]
+                        ?.message ||
                     'Invalid project data'
+
             });
         }
 
+
         const project =
             await userService.updateProject(
+
                 req.user.id,
+
                 req.params.id,
+
                 validation.data
+
             );
 
+
         return res.status(200).json({
+
             success: true,
-            message: 'Project updated successfully',
-            data: project
+
+            message:
+                'Project updated successfully',
+
+            data:
+                project
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
 
-export const deleteProject = async (req, res, next) => {
+export const deleteProject = async (
+    req,
+    res,
+    next
+) => {
+
     try {
+
         const result =
             await userService.deleteProject(
+
                 req.user.id,
+
                 req.params.id
+
             );
 
+
         return res.status(200).json({
+
             success: true,
-            message: 'Project deleted successfully',
-            data: result
+
+            message:
+                'Project deleted successfully',
+
+            data:
+                result
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
@@ -573,10 +1234,17 @@ export const deleteProject = async (req, res, next) => {
 // ================================================================
 
 const certificationSchema = z.object({
+
     title: z
         .string()
-        .min(1, 'Certification title is required')
-        .max(200, 'Certification title is too long')
+        .min(
+            1,
+            'Certification title is required'
+        )
+        .max(
+            200,
+            'Certification title is too long'
+        )
         .trim(),
 
     organization: z
@@ -598,6 +1266,7 @@ const certificationSchema = z.object({
         .string()
         .optional()
         .default('')
+
 });
 
 
@@ -606,18 +1275,28 @@ export const getCertifications = async (
     res,
     next
 ) => {
+
     try {
+
         const certifications =
             await userService.getCertifications(
                 req.user.id
             );
 
+
         return res.status(200).json({
+
             success: true,
-            data: certifications
+
+            data:
+                certifications
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
@@ -627,32 +1306,57 @@ export const addCertification = async (
     res,
     next
 ) => {
+
     try {
+
         const validation =
-            certificationSchema.safeParse(req.body);
+            certificationSchema.safeParse(
+                req.body
+            );
+
 
         if (!validation.success) {
+
             return res.status(400).json({
+
+                success: false,
+
                 error:
-                    validation.error.issues[0]?.message ||
+                    validation.error
+                        .issues[0]
+                        ?.message ||
                     'Invalid certification data'
+
             });
         }
 
+
         const certification =
             await userService.addCertification(
+
                 req.user.id,
+
                 validation.data
+
             );
 
+
         return res.status(201).json({
+
             success: true,
+
             message:
                 'Certification added successfully',
-            data: certification
+
+            data:
+                certification
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
@@ -662,33 +1366,59 @@ export const updateCertification = async (
     res,
     next
 ) => {
+
     try {
+
         const validation =
-            certificationSchema.safeParse(req.body);
+            certificationSchema.safeParse(
+                req.body
+            );
+
 
         if (!validation.success) {
+
             return res.status(400).json({
+
+                success: false,
+
                 error:
-                    validation.error.issues[0]?.message ||
+                    validation.error
+                        .issues[0]
+                        ?.message ||
                     'Invalid certification data'
+
             });
         }
 
+
         const certification =
             await userService.updateCertification(
+
                 req.user.id,
+
                 req.params.id,
+
                 validation.data
+
             );
 
+
         return res.status(200).json({
+
             success: true,
+
             message:
                 'Certification updated successfully',
-            data: certification
+
+            data:
+                certification
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
 
@@ -698,20 +1428,34 @@ export const deleteCertification = async (
     res,
     next
 ) => {
+
     try {
+
         const result =
             await userService.deleteCertification(
+
                 req.user.id,
+
                 req.params.id
+
             );
 
+
         return res.status(200).json({
+
             success: true,
+
             message:
                 'Certification deleted successfully',
-            data: result
+
+            data:
+                result
+
         });
+
     } catch (error) {
+
         return next(error);
+
     }
 };
