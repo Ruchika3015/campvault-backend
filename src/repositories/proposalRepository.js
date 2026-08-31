@@ -1,8 +1,21 @@
 import pool from '../config/db.js';
+import * as notificationRepository from './notificationRepository.js';
 
 
 // ================================================================
 // CREATE PROPOSAL
+// ================================================================
+//
+// IMPORTANT:
+//
+// Student clicks INTERESTED / SEND PROPOSAL
+//          ↓
+// Proposal is created
+//          ↓
+// NO conversation
+// NO message
+//
+// Conversation is created/reused ONLY after poster accepts.
 // ================================================================
 
 export const createProposal = async ({
@@ -35,7 +48,6 @@ export const createProposal = async ({
         RETURNING *;
     `;
 
-
     const values = [
         Number(jugaadId),
         Number(helperId),
@@ -44,7 +56,6 @@ export const createProposal = async ({
         estimatedCompletion
     ];
 
-
     const {
         rows
     } = await pool.query(
@@ -52,9 +63,7 @@ export const createProposal = async ({
         values
     );
 
-
     return rows[0] || null;
-
 };
 
 
@@ -96,24 +105,23 @@ export const findProposalById = async (
         JOIN users poster
             ON poster.id = j.poster_id
 
+        /*
+         * IMPORTANT FIX:
+         *
+         * A conversation belongs to the exact proposal
+         * and exact Jugaad.
+         *
+         * Do not search only by the user pair because the
+         * same two students can interact on multiple Jugaads.
+         */
         LEFT JOIN conversations c
-            ON c.user_one_id =
-                LEAST(
-                    j.poster_id,
-                    p.helper_id
-                )
-
-            AND c.user_two_id =
-                GREATEST(
-                    j.poster_id,
-                    p.helper_id
-                )
+            ON c.proposal_id = p.id
+            AND c.jugaad_id = p.jugaad_id
 
         WHERE p.id = $1
 
         LIMIT 1;
     `;
-
 
     const {
         rows
@@ -122,9 +130,7 @@ export const findProposalById = async (
         [Number(id)]
     );
 
-
     return rows[0] || null;
-
 };
 
 
@@ -139,7 +145,6 @@ export const findProposalByJugaadAndHelper = async (
 
     const query = `
         SELECT *
-
         FROM jugaad_proposals
 
         WHERE jugaad_id = $1
@@ -147,7 +152,6 @@ export const findProposalByJugaadAndHelper = async (
 
         LIMIT 1;
     `;
-
 
     const {
         rows
@@ -159,9 +163,7 @@ export const findProposalByJugaadAndHelper = async (
         ]
     );
 
-
     return rows[0] || null;
-
 };
 
 
@@ -190,6 +192,10 @@ export const findProposalsByJugaadId = async (
             helper.number AS helper_number,
             helper.location AS helper_location,
 
+            /*
+             * IMPORTANT FIX:
+             * Return the conversation for THIS proposal.
+             */
             c.id AS conversation_id,
 
             co.amount AS latest_counter_amount,
@@ -206,17 +212,8 @@ export const findProposalsByJugaadId = async (
             ON j.id = p.jugaad_id
 
         LEFT JOIN conversations c
-            ON c.user_one_id =
-                LEAST(
-                    j.poster_id,
-                    p.helper_id
-                )
-
-            AND c.user_two_id =
-                GREATEST(
-                    j.poster_id,
-                    p.helper_id
-                )
+            ON c.proposal_id = p.id
+            AND c.jugaad_id = p.jugaad_id
 
         LEFT JOIN LATERAL (
             SELECT
@@ -241,7 +238,6 @@ export const findProposalsByJugaadId = async (
             p.created_at DESC;
     `;
 
-
     const {
         rows
     } = await pool.query(
@@ -249,9 +245,7 @@ export const findProposalsByJugaadId = async (
         [Number(jugaadId)]
     );
 
-
     return rows;
-
 };
 
 
@@ -282,6 +276,10 @@ export const findMyProposals = async (
 
             poster.name AS poster_name,
 
+            /*
+             * IMPORTANT FIX:
+             * Return the conversation for THIS proposal.
+             */
             c.id AS conversation_id,
 
             co.amount AS latest_counter_amount,
@@ -297,17 +295,8 @@ export const findMyProposals = async (
             ON poster.id = j.poster_id
 
         LEFT JOIN conversations c
-            ON c.user_one_id =
-                LEAST(
-                    j.poster_id,
-                    p.helper_id
-                )
-
-            AND c.user_two_id =
-                GREATEST(
-                    j.poster_id,
-                    p.helper_id
-                )
+            ON c.proposal_id = p.id
+            AND c.jugaad_id = p.jugaad_id
 
         LEFT JOIN LATERAL (
             SELECT
@@ -331,7 +320,6 @@ export const findMyProposals = async (
             p.created_at DESC;
     `;
 
-
     const {
         rows
     } = await pool.query(
@@ -339,9 +327,7 @@ export const findMyProposals = async (
         [Number(helperId)]
     );
 
-
     return rows;
-
 };
 
 
@@ -373,6 +359,11 @@ export const findReceivedProposals = async (
             helper.number AS helper_number,
             helper.location AS helper_location,
 
+            /*
+             * IMPORTANT FIX:
+             * Return the exact conversation belonging
+             * to this proposal.
+             */
             c.id AS conversation_id,
 
             co.amount AS latest_counter_amount,
@@ -388,17 +379,8 @@ export const findReceivedProposals = async (
             ON helper.id = p.helper_id
 
         LEFT JOIN conversations c
-            ON c.user_one_id =
-                LEAST(
-                    j.poster_id,
-                    p.helper_id
-                )
-
-            AND c.user_two_id =
-                GREATEST(
-                    j.poster_id,
-                    p.helper_id
-                )
+            ON c.proposal_id = p.id
+            AND c.jugaad_id = p.jugaad_id
 
         LEFT JOIN LATERAL (
             SELECT
@@ -422,7 +404,6 @@ export const findReceivedProposals = async (
             p.created_at DESC;
     `;
 
-
     const {
         rows
     } = await pool.query(
@@ -430,9 +411,7 @@ export const findReceivedProposals = async (
         [Number(posterId)]
     );
 
-
     return rows;
-
 };
 
 
@@ -440,25 +419,13 @@ export const findReceivedProposals = async (
 // ACCEPT PROPOSAL TRANSACTION
 // ================================================================
 //
-// IMPORTANT:
+// This is the ONLY place where a conversation is created/reused.
 //
-// Accepting a proposal:
-//      ↓
-// Proposal accepted
-//      ↓
-// Jugaad assigned
-//      ↓
-// Other pending proposals rejected
-//      ↓
-// Conversation created/reused
-//      ↓
-// Participants added
-//      ↓
-// Notifications created according to preferences
+// INTERESTED:
+//     proposal only
 //
-// Notification settings NEVER control whether the conversation
-// is created.
-//
+// ACCEPT:
+//     conversation created/reused
 // ================================================================
 
 export const acceptProposalTransaction = async (
@@ -468,7 +435,6 @@ export const acceptProposalTransaction = async (
 
     const client =
         await pool.connect();
-
 
     try {
 
@@ -499,14 +465,11 @@ export const acceptProposalTransaction = async (
             FOR UPDATE;
         `;
 
-
         const {
             rows: propRows
         } = await client.query(
             propQuery,
-            [
-                Number(proposalId)
-            ]
+            [Number(proposalId)]
         );
 
 
@@ -522,7 +485,6 @@ export const acceptProposalTransaction = async (
             error.statusCode = 404;
 
             throw error;
-
         }
 
 
@@ -549,7 +511,6 @@ export const acceptProposalTransaction = async (
             error.statusCode = 403;
 
             throw error;
-
         }
 
 
@@ -570,7 +531,6 @@ export const acceptProposalTransaction = async (
             error.statusCode = 400;
 
             throw error;
-
         }
 
 
@@ -591,7 +551,6 @@ export const acceptProposalTransaction = async (
             error.statusCode = 400;
 
             throw error;
-
         }
 
 
@@ -611,15 +570,12 @@ export const acceptProposalTransaction = async (
             RETURNING *;
         `;
 
-
         const {
             rows:
                 acceptedProposalRows
         } = await client.query(
             updateProposalQuery,
-            [
-                Number(proposalId)
-            ]
+            [Number(proposalId)]
         );
 
 
@@ -643,7 +599,6 @@ export const acceptProposalTransaction = async (
 
             RETURNING *;
         `;
-
 
         const {
             rows:
@@ -678,7 +633,6 @@ export const acceptProposalTransaction = async (
             error.statusCode = 500;
 
             throw error;
-
         }
 
 
@@ -702,7 +656,6 @@ export const acceptProposalTransaction = async (
                 helper_id;
         `;
 
-
         const {
             rows:
                 rejectedHelpers
@@ -721,14 +674,11 @@ export const acceptProposalTransaction = async (
 
 
         // ============================================================
-        // 8. NORMALIZE USER PAIR
+        // 8. NORMALIZE USER IDS
         // ============================================================
 
         const firstUserId =
-            Number(
-                posterId
-            );
-
+            Number(posterId);
 
         const secondUserId =
             Number(
@@ -753,7 +703,6 @@ export const acceptProposalTransaction = async (
             error.statusCode = 400;
 
             throw error;
-
         }
 
 
@@ -775,6 +724,13 @@ export const acceptProposalTransaction = async (
         // 9. CREATE OR REUSE ONE CONVERSATION
         // ============================================================
 
+        /*
+         * Keep the existing user-pair uniqueness used by your
+         * conversations table.
+         *
+         * When an existing pair is found, update that conversation
+         * so it points to the accepted Jugaad + proposal.
+         */
         const createConversationQuery = `
             INSERT INTO conversations (
                 user_one_id,
@@ -842,7 +798,6 @@ export const acceptProposalTransaction = async (
             error.statusCode = 500;
 
             throw error;
-
         }
 
 
@@ -877,183 +832,63 @@ export const acceptProposalTransaction = async (
                 ),
 
                 firstUserId,
-
                 secondUserId
             ]
         );
 
 
         // ============================================================
-        // 11. ACCEPTED PROPOSAL NOTIFICATION
+        // 11. NOTIFY ACCEPTED HELPER
         // ============================================================
-        //
-        // BOTH settings must be ON:
-        //
-        // accepted_proposal_notifications
-        //             AND
-        // in_app_notifications
-        //
-        // If there is no preference row, both default to TRUE.
-        //
-        // Conversation creation above is NOT affected.
-        // ============================================================
-
-        const acceptedPreferenceQuery = `
-            SELECT
-                accepted_proposal_notifications,
-                in_app_notifications
-
-            FROM notification_preferences
-
-            WHERE user_id = $1
-
-            LIMIT 1;
-        `;
-
-
-        const {
-            rows:
-                acceptedPreferenceRows
-        } = await client.query(
-            acceptedPreferenceQuery,
-            [
-                secondUserId
-            ]
-        );
-
 
         const acceptedNotificationEnabled =
-            acceptedPreferenceRows.length === 0
-                ? true
-                : Boolean(
-                      acceptedPreferenceRows[0]
-                          .accepted_proposal_notifications
-                  );
-
-
-        const acceptedInAppEnabled =
-            acceptedPreferenceRows.length === 0
-                ? true
-                : Boolean(
-                      acceptedPreferenceRows[0]
-                          .in_app_notifications
-                  );
+            await notificationRepository.isNotificationTypeEnabled(
+                secondUserId,
+                'accepted_proposal_notifications'
+            );
 
 
         if (
-            acceptedNotificationEnabled &&
-            acceptedInAppEnabled
+            acceptedNotificationEnabled
         ) {
 
-            const notifyAcceptedQuery = `
-                INSERT INTO notifications (
-                    user_id,
-                    type,
-                    title,
-                    message,
-                    reference_type,
-                    reference_id
-                )
+            await notificationRepository.createNotification({
 
-                VALUES (
-                    $1,
-                    'PROPOSAL_ACCEPTED',
-                    'Proposal Accepted!',
-                    $2,
-                    'jugaad',
-                    $3
-                );
-            `;
-
-
-            await client.query(
-                notifyAcceptedQuery,
-                [
+                userId:
                     secondUserId,
 
+                type:
+                    'PROPOSAL_ACCEPTED',
+
+                title:
+                    'Proposal Accepted!',
+
+                message:
                     `Congratulations! Your proposal for "${proposal.jugaad_title}" has been accepted. Conversation is now unlocked!`,
 
+                referenceType:
+                    'jugaad',
+
+                referenceId:
                     Number(
                         proposal.jugaad_id
-                    )
-                ]
-            );
+                    ),
+
+                client
+
+            });
 
         }
 
 
         // ============================================================
-        // 12. REJECTED PROPOSAL NOTIFICATIONS
-        // ============================================================
-        //
-        // For every helper whose pending proposal was automatically
-        // rejected:
-        //
-        // rejected_proposal_notifications
-        //             AND
-        // in_app_notifications
-        //
-        // must both be ON.
+        // 12. NOTIFY REJECTED HELPERS
         // ============================================================
 
         for (
             const rejected
             of rejectedHelpers
         ) {
-
-            const rejectedPreferenceQuery = `
-                SELECT
-                    rejected_proposal_notifications,
-                    in_app_notifications
-
-                FROM notification_preferences
-
-                WHERE user_id = $1
-
-                LIMIT 1;
-            `;
-
-
-            const {
-                rows:
-                    rejectedPreferenceRows
-            } = await client.query(
-                rejectedPreferenceQuery,
-                [
-                    Number(
-                        rejected.helper_id
-                    )
-                ]
-            );
-
-
-            const rejectedNotificationEnabled =
-                rejectedPreferenceRows.length === 0
-                    ? true
-                    : Boolean(
-                          rejectedPreferenceRows[0]
-                              .rejected_proposal_notifications
-                      );
-
-
-            const rejectedInAppEnabled =
-                rejectedPreferenceRows.length === 0
-                    ? true
-                    : Boolean(
-                          rejectedPreferenceRows[0]
-                              .in_app_notifications
-                      );
-
-
-            if (
-                !rejectedNotificationEnabled ||
-                !rejectedInAppEnabled
-            ) {
-
-                continue;
-
-            }
-
 
             const notifyRejectedQuery = `
                 INSERT INTO notifications (
@@ -1090,7 +925,6 @@ export const acceptProposalTransaction = async (
                     )
                 ]
             );
-
         }
 
 
@@ -1104,7 +938,6 @@ export const acceptProposalTransaction = async (
 
 
         return {
-
             proposal:
                 acceptedProposal,
 
@@ -1112,7 +945,6 @@ export const acceptProposalTransaction = async (
                 updatedJugaad,
 
             conversation
-
         };
 
     } catch (error) {
@@ -1126,9 +958,7 @@ export const acceptProposalTransaction = async (
     } finally {
 
         client.release();
-
     }
-
 };
 
 
@@ -1173,7 +1003,6 @@ export const rejectProposal = async (
 
 
     return rows[0] || null;
-
 };
 
 
@@ -1219,7 +1048,6 @@ export const withdrawProposal = async (
 
 
     return rows[0] || null;
-
 };
 
 
@@ -1293,7 +1121,6 @@ export const createCounterOffer = async ({
 
 
     return rows[0] || null;
-
 };
 
 
@@ -1334,5 +1161,4 @@ export const findCounterOffersByProposalId = async (
 
 
     return rows;
-
 };
