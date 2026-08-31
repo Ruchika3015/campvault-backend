@@ -25,6 +25,7 @@ export const createJugaad = async ({
     priority,
     attachmentUrl
 }) => {
+
     const query = `
         INSERT INTO jugaads (
             poster_id,
@@ -38,6 +39,7 @@ export const createJugaad = async ({
             priority,
             attachment_url
         )
+
         VALUES (
             $1,
             $2,
@@ -50,6 +52,7 @@ export const createJugaad = async ({
             $9,
             $10
         )
+
         RETURNING *;
     `;
 
@@ -86,6 +89,7 @@ export const createJugaad = async ({
 export const findJugaadById = async (
     id
 ) => {
+
     const query = `
         SELECT
             j.*,
@@ -147,6 +151,7 @@ export const updateJugaad = async (
         attachmentUrl
     }
 ) => {
+
     const fields = [];
     const values = [];
 
@@ -156,88 +161,112 @@ export const updateJugaad = async (
     if (
         title !== undefined
     ) {
+
         fields.push(
             `title = $${index++}`
         );
 
-        values.push(title);
+        values.push(
+            title
+        );
     }
 
 
     if (
         description !== undefined
     ) {
+
         fields.push(
             `description = $${index++}`
         );
 
-        values.push(description);
+        values.push(
+            description
+        );
     }
 
 
     if (
         category !== undefined
     ) {
+
         fields.push(
             `category = $${index++}`
         );
 
-        values.push(category);
+        values.push(
+            category
+        );
     }
 
 
     if (
         requiredSkills !== undefined
     ) {
+
         fields.push(
             `required_skills = $${index++}`
         );
 
-        values.push(requiredSkills);
+        values.push(
+            requiredSkills
+        );
     }
 
 
     if (
         budget !== undefined
     ) {
+
         fields.push(
             `budget = $${index++}`
         );
 
-        values.push(budget);
+        values.push(
+            budget
+        );
     }
 
 
     if (
         deadline !== undefined
     ) {
+
         fields.push(
             `deadline = $${index++}`
         );
 
-        values.push(deadline);
+        values.push(
+            deadline
+        );
     }
 
 
     if (
         priority !== undefined
     ) {
+
         fields.push(
             `priority = $${index++}`
         );
 
-        values.push(priority);
+        values.push(
+            priority
+        );
     }
 
 
     if (
         attachmentUrl !== undefined
     ) {
+
         fields.push(
             `attachment_url = $${index++}`
         );
 
-        values.push(attachmentUrl);
+        values.push(
+            attachmentUrl
+        );
     }
 
 
@@ -246,8 +275,13 @@ export const updateJugaad = async (
     );
 
 
-    values.push(id);
-    values.push(posterId);
+    values.push(
+        id
+    );
+
+    values.push(
+        posterId
+    );
 
 
     const query = `
@@ -285,6 +319,7 @@ export const cancelOrDeleteJugaad = async (
     id,
     posterId
 ) => {
+
     const query = `
         UPDATE jugaads
 
@@ -366,7 +401,10 @@ export const findMyJugaads = async (
     if (
         status
     ) {
-        values.push(status);
+
+        values.push(
+            status
+        );
 
 
         query += `
@@ -450,6 +488,7 @@ export const findDiscoverableJugaads = async ({
     if (
         collegeId
     ) {
+
         conditions.push(
             `j.college_id = $${index++}`
         );
@@ -461,6 +500,7 @@ export const findDiscoverableJugaads = async ({
     } else if (
         userCollegeId
     ) {
+
         conditions.push(
             `j.college_id = $${index++}`
         );
@@ -474,6 +514,7 @@ export const findDiscoverableJugaads = async ({
     if (
         category
     ) {
+
         conditions.push(
             `LOWER(j.category) = LOWER($${index++})`
         );
@@ -488,6 +529,7 @@ export const findDiscoverableJugaads = async ({
         skills &&
         skills.length > 0
     ) {
+
         conditions.push(
             `j.required_skills && $${index++}::TEXT[]`
         );
@@ -501,6 +543,7 @@ export const findDiscoverableJugaads = async ({
     if (
         search
     ) {
+
         conditions.push(
             `
             (
@@ -523,6 +566,7 @@ export const findDiscoverableJugaads = async ({
         minBudget !== null &&
         minBudget !== undefined
     ) {
+
         conditions.push(
             `j.budget >= $${index++}`
         );
@@ -537,6 +581,7 @@ export const findDiscoverableJugaads = async ({
         maxBudget !== null &&
         maxBudget !== undefined
     ) {
+
         conditions.push(
             `j.budget <= $${index++}`
         );
@@ -606,6 +651,7 @@ export const findDiscoverableJugaads = async ({
             j.created_at DESC
 
         LIMIT $${limitIndex}
+
         OFFSET $${offsetIndex};
     `;
 
@@ -685,7 +731,7 @@ export const markNotInterested = async (
  * - create conversation participants
  * - create a message
  *
- * The conversation must be created ONLY after
+ * The conversation is created ONLY after
  * the poster accepts the proposal.
  */
 
@@ -762,6 +808,18 @@ export const createInterestProposal = async (
  * ============================================================
  * GET PROPOSALS FOR A JUGAAD
  * ============================================================
+ *
+ * Used by My Jugaads.
+ *
+ * IMPORTANT FIX:
+ *
+ * The accepted proposal's conversation is linked using:
+ *
+ *     conversation.proposal_id
+ *     conversation.jugaad_id
+ *
+ * Therefore the frontend receives the REAL
+ * conversation_id and can show MESSAGE.
  */
 
 export const findProposalsForJugaad = async (
@@ -774,19 +832,41 @@ export const findProposalsForJugaad = async (
             p.id,
             p.jugaad_id,
             p.helper_id,
+
             p.proposal_message,
             p.proposed_price,
             p.estimated_completion,
+
             p.status,
             p.created_at,
             p.updated_at,
 
+            /*
+             * REAL STUDENT / HELPER
+             */
             u.name AS helper_name,
             u.email AS helper_email,
             u.number AS helper_number,
             u.location AS helper_location,
 
-            c.name AS helper_college_name
+            /*
+             * COLLEGE
+             */
+            college.name AS helper_college_name,
+
+            /*
+             * ====================================================
+             * REAL CONVERSATION ID
+             * ====================================================
+             *
+             * Only an accepted proposal should have a conversation.
+             *
+             * Match the exact proposal + exact Jugaad.
+             *
+             * The fallback handles older conversation rows that
+             * may not have proposal_id populated.
+             */
+            conversation.id AS conversation_id
 
         FROM jugaad_proposals p
 
@@ -796,11 +876,76 @@ export const findProposalsForJugaad = async (
         INNER JOIN users u
             ON u.id = p.helper_id
 
-        LEFT JOIN college c
-            ON c.id = u.college_id
+        LEFT JOIN college
+            ON college.id = u.college_id
 
-        WHERE p.jugaad_id = $1
-          AND j.poster_id = $2
+        LEFT JOIN LATERAL (
+
+            SELECT
+                conv.id,
+                conv.proposal_id,
+                conv.jugaad_id
+
+            FROM conversations conv
+
+            WHERE
+
+                /*
+                 * PRIMARY MATCH:
+                 * exact accepted proposal
+                 */
+                (
+                    conv.proposal_id = p.id
+                    AND conv.jugaad_id = p.jugaad_id
+                )
+
+                OR
+
+                /*
+                 * FALLBACK:
+                 * older conversation without proposal_id
+                 */
+                (
+                    conv.proposal_id IS NULL
+
+                    AND conv.jugaad_id = p.jugaad_id
+
+                    AND conv.user_one_id =
+                        LEAST(
+                            j.poster_id,
+                            p.helper_id
+                        )
+
+                    AND conv.user_two_id =
+                        GREATEST(
+                            j.poster_id,
+                            p.helper_id
+                        )
+                )
+
+            ORDER BY
+
+                /*
+                 * Always prefer exact proposal match.
+                 */
+                CASE
+                    WHEN conv.proposal_id = p.id
+                        THEN 0
+
+                    ELSE 1
+                END,
+
+                conv.id DESC
+
+            LIMIT 1
+
+        ) conversation
+            ON TRUE
+
+        WHERE
+            p.jugaad_id = $1
+
+            AND j.poster_id = $2
 
         ORDER BY
             p.created_at DESC;
@@ -812,8 +957,8 @@ export const findProposalsForJugaad = async (
     } = await pool.query(
         query,
         [
-            jugaadId,
-            posterId
+            Number(jugaadId),
+            Number(posterId)
         ]
     );
 
@@ -846,7 +991,9 @@ export const countProposalsForJugaad = async (
         rows
     } = await pool.query(
         query,
-        [jugaadId]
+        [
+            jugaadId
+        ]
     );
 
 
