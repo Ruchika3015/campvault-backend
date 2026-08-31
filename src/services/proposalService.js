@@ -1,5 +1,3 @@
-import pool from '../config/db.js';
-
 import * as proposalRepository from '../repositories/proposalRepository.js';
 import * as jugaadRepository from '../repositories/jugaadRepository.js';
 import * as notificationService from './notificationService.js';
@@ -14,56 +12,79 @@ export const submitProposal = async (
     proposalData,
     user
 ) => {
+
     const {
         proposal_message,
         proposed_price,
         estimated_completion
     } = proposalData;
 
+
     // ------------------------------------------------------------
     // 1. Find the Jugaad
     // ------------------------------------------------------------
 
     const jugaad =
-        await jugaadRepository.findJugaadById(jugaadId);
-
-    if (!jugaad) {
-        const error = new Error(
-            'Jugaad not found.'
+        await jugaadRepository.findJugaadById(
+            jugaadId
         );
 
+
+    if (!jugaad) {
+
+        const error =
+            new Error(
+                'Jugaad not found.'
+            );
+
         error.statusCode = 404;
+
         throw error;
+
     }
 
+
     // ------------------------------------------------------------
-    // 2. User cannot bargain on their own Jugaad
+    // 2. User cannot submit proposal on own Jugaad
     // ------------------------------------------------------------
 
     if (
         jugaad.poster_id.toString() ===
         user.id.toString()
     ) {
-        const error = new Error(
-            'You cannot submit a proposal for your own Jugaad.'
-        );
+
+        const error =
+            new Error(
+                'You cannot submit a proposal for your own Jugaad.'
+            );
 
         error.statusCode = 400;
+
         throw error;
+
     }
+
 
     // ------------------------------------------------------------
     // 3. Jugaad must be open
     // ------------------------------------------------------------
 
-    if (jugaad.status !== 'open') {
-        const error = new Error(
-            `Cannot submit proposal for a Jugaad that is '${jugaad.status}'.`
-        );
+    if (
+        jugaad.status !==
+        'open'
+    ) {
+
+        const error =
+            new Error(
+                `Cannot submit proposal for a Jugaad that is '${jugaad.status}'.`
+            );
 
         error.statusCode = 400;
+
         throw error;
+
     }
+
 
     // ------------------------------------------------------------
     // 4. Check existing proposal
@@ -75,188 +96,188 @@ export const submitProposal = async (
             user.id
         );
 
+
     if (existingProposal) {
-        if (existingProposal.status === 'pending') {
-            const error = new Error(
-                'You have already submitted an active proposal for this Jugaad.'
-            );
+
+        if (
+            existingProposal.status ===
+            'pending'
+        ) {
+
+            const error =
+                new Error(
+                    'You have already submitted an active proposal for this Jugaad.'
+                );
 
             error.statusCode = 400;
+
             throw error;
+
         }
 
-        if (existingProposal.status === 'accepted') {
-            const error = new Error(
-                'Your proposal for this Jugaad has already been accepted.'
-            );
+
+        if (
+            existingProposal.status ===
+            'accepted'
+        ) {
+
+            const error =
+                new Error(
+                    'Your proposal for this Jugaad has already been accepted.'
+                );
 
             error.statusCode = 400;
+
             throw error;
+
         }
+
     }
 
+
     // ------------------------------------------------------------
-    // 5. Create the proposal
+    // 5. Validate proposed price
+    // ------------------------------------------------------------
+
+    const finalPrice =
+        proposed_price !== undefined &&
+        proposed_price !== null &&
+        proposed_price !== ''
+
+            ? parseFloat(
+                  proposed_price
+              )
+
+            : parseFloat(
+                  jugaad.budget
+              );
+
+
+    if (
+        !Number.isFinite(
+            finalPrice
+        ) ||
+        finalPrice <= 0
+    ) {
+
+        const error =
+            new Error(
+                'A valid proposed price is required.'
+            );
+
+        error.statusCode = 400;
+
+        throw error;
+
+    }
+
+
+    // ------------------------------------------------------------
+    // 6. Validate proposal message
+    // ------------------------------------------------------------
+
+    const finalMessage =
+        proposal_message &&
+        String(
+            proposal_message
+        ).trim()
+
+            ? String(
+                  proposal_message
+              ).trim()
+
+            : 'I am interested in helping with this Jugaad.';
+
+
+    // ------------------------------------------------------------
+    // 7. Create proposal
+    // ------------------------------------------------------------
+    //
+    // IMPORTANT:
+    //
+    // Submitting a proposal does NOT create:
+    //
+    // - conversation
+    // - conversation participant
+    // - message
+    //
+    // Chat is unlocked only after the poster accepts.
     // ------------------------------------------------------------
 
     const proposal =
         await proposalRepository.createProposal({
+
             jugaadId,
-            helperId: user.id,
+
+            helperId:
+                user.id,
+
             proposalMessage:
-                proposal_message.trim(),
+                finalMessage,
+
             proposedPrice:
-                parseFloat(proposed_price),
+                finalPrice,
+
             estimatedCompletion:
                 estimated_completion
-                    ? estimated_completion.trim()
+                    ? String(
+                          estimated_completion
+                      ).trim()
                     : null
+
         });
 
-    // ============================================================
-    // 6. CREATE CONVERSATION FOR THE BARGAIN
-    // ============================================================
 
-    /*
-     * Previously the conversation was created only when the
-     * poster accepted the proposal.
-     *
-     * That meant the helper could submit a bargain message,
-     * but the poster had no conversation containing that message.
-     *
-     * Now we create the conversation immediately.
-     */
-
-    const client = await pool.connect();
-
-    try {
-        await client.query('BEGIN');
-
-        // --------------------------------------------------------
-        // Create conversation
-        // --------------------------------------------------------
-
-        const conversationQuery = `
-            INSERT INTO conversations (
-                jugaad_id,
-                proposal_id
-            )
-            VALUES ($1, $2)
-            ON CONFLICT (jugaad_id, proposal_id)
-            DO UPDATE SET
-                jugaad_id = EXCLUDED.jugaad_id
-            RETURNING *;
-        `;
-
-        const {
-            rows: conversationRows
-        } = await client.query(
-            conversationQuery,
-            [
-                jugaadId,
-                proposal.id
-            ]
-        );
-
-        const conversation =
-            conversationRows[0];
-
-        // --------------------------------------------------------
-        // Add poster and helper as participants
-        // --------------------------------------------------------
-
-        const participantsQuery = `
-            INSERT INTO conversation_participants (
-                conversation_id,
-                user_id
-            )
-            VALUES
-                ($1, $2),
-                ($1, $3)
-            ON CONFLICT (
-                conversation_id,
-                user_id
-            )
-            DO NOTHING;
-        `;
-
-        await client.query(
-            participantsQuery,
-            [
-                conversation.id,
-                jugaad.poster_id,
-                user.id
-            ]
-        );
-
-        // --------------------------------------------------------
-        // Put the bargain message into the conversation
-        // --------------------------------------------------------
-
-        const messageQuery = `
-            INSERT INTO messages (
-                conversation_id,
-                sender_id,
-                content
-            )
-            VALUES ($1, $2, $3)
-            RETURNING *;
-        `;
-
-        await client.query(
-            messageQuery,
-            [
-                conversation.id,
-                user.id,
-                proposal_message.trim()
-            ]
-        );
-
-        await client.query('COMMIT');
-
-    } catch (error) {
-
-        await client.query('ROLLBACK');
-
-        /*
-         * The proposal has already been created before this
-         * transaction. We don't hide the error because the
-         * conversation/message must be created successfully.
-         */
-
-        throw error;
-
-    } finally {
-
-        client.release();
-
-    }
-
-    // ============================================================
-    // 7. Notify the Jugaad poster
-    // ============================================================
+    // ------------------------------------------------------------
+    // 8. Notify poster
+    // ------------------------------------------------------------
+    //
+    // notificationService checks:
+    //
+    // proposal_notifications
+    //
+    // ON  -> notification is created
+    // OFF -> notification is skipped
+    //
+    // Failure to create a notification does not cancel the
+    // proposal because the proposal itself was successful.
+    // ------------------------------------------------------------
 
     notificationService.notifyUser({
-        userId: jugaad.poster_id,
-        type: 'PROPOSAL_RECEIVED',
-        title: 'New Proposal Received',
+
+        userId:
+            jugaad.poster_id,
+
+        type:
+            'PROPOSAL_RECEIVED',
+
+        title:
+            'New Proposal Received',
+
         message:
-            `${user.name || 'A student'} submitted a proposal for "${jugaad.title}" (₹${proposed_price}).`,
-        referenceType: 'jugaad',
-        referenceId: jugaad.id
+            `${user.name || 'A student'} submitted a proposal for "${jugaad.title}" (₹${finalPrice}).`,
+
+        referenceType:
+            'jugaad',
+
+        referenceId:
+            jugaad.id
+
     }).catch(
-        err =>
+        error =>
             console.error(
                 'Notification error:',
-                err
+                error
             )
     );
 
+
     // ------------------------------------------------------------
-    // 8. Return proposal
+    // 9. Return proposal
     // ------------------------------------------------------------
 
     return proposal;
+
 };
 
 
@@ -274,30 +295,42 @@ export const getProposalsForJugaad = async (
             jugaadId
         );
 
+
     if (!jugaad) {
-        const error = new Error(
-            'Jugaad not found.'
-        );
+
+        const error =
+            new Error(
+                'Jugaad not found.'
+            );
 
         error.statusCode = 404;
+
         throw error;
+
     }
+
 
     if (
         jugaad.poster_id.toString() !==
         user.id.toString()
     ) {
-        const error = new Error(
-            'Unauthorized: Only the Jugaad owner can view received proposals.'
-        );
+
+        const error =
+            new Error(
+                'Unauthorized: Only the Jugaad owner can view received proposals.'
+            );
 
         error.statusCode = 403;
+
         throw error;
+
     }
+
 
     return await proposalRepository.findProposalsByJugaadId(
         jugaadId
     );
+
 };
 
 
@@ -312,6 +345,7 @@ export const getMyProposals = async (
     return await proposalRepository.findMyProposals(
         user.id
     );
+
 };
 
 
@@ -326,6 +360,7 @@ export const getReceivedProposals = async (
     return await proposalRepository.findReceivedProposals(
         user.id
     );
+
 };
 
 
@@ -344,11 +379,16 @@ export const acceptProposal = async (
             user.id
         );
 
+
     return {
+
         message:
             'Proposal accepted successfully! Jugaad is now assigned, and a direct conversation has been unlocked.',
+
         ...result
+
     };
+
 };
 
 
@@ -366,35 +406,54 @@ export const rejectProposal = async (
             proposalId
         );
 
+
     if (!proposal) {
-        const error = new Error(
-            'Proposal not found.'
-        );
+
+        const error =
+            new Error(
+                'Proposal not found.'
+            );
 
         error.statusCode = 404;
+
         throw error;
+
     }
+
 
     if (
         proposal.poster_id.toString() !==
         user.id.toString()
     ) {
-        const error = new Error(
-            'Unauthorized: Only the Jugaad owner can reject proposals.'
-        );
+
+        const error =
+            new Error(
+                'Unauthorized: Only the Jugaad owner can reject proposals.'
+            );
 
         error.statusCode = 403;
+
         throw error;
+
     }
 
-    if (proposal.status !== 'pending') {
-        const error = new Error(
-            `Cannot reject proposal with status '${proposal.status}'.`
-        );
+
+    if (
+        proposal.status !==
+        'pending'
+    ) {
+
+        const error =
+            new Error(
+                `Cannot reject proposal with status '${proposal.status}'.`
+            );
 
         error.statusCode = 400;
+
         throw error;
+
     }
+
 
     const rejected =
         await proposalRepository.rejectProposal(
@@ -402,24 +461,42 @@ export const rejectProposal = async (
             user.id
         );
 
+
+    // ------------------------------------------------------------
     // Notify helper
+    // ------------------------------------------------------------
+
     notificationService.notifyUser({
-        userId: proposal.helper_id,
-        type: 'PROPOSAL_REJECTED',
-        title: 'Proposal Rejected',
+
+        userId:
+            proposal.helper_id,
+
+        type:
+            'PROPOSAL_REJECTED',
+
+        title:
+            'Proposal Rejected',
+
         message:
             `Your proposal for "${proposal.jugaad_title}" was declined by the poster.`,
-        referenceType: 'jugaad',
-        referenceId: proposal.jugaad_id
+
+        referenceType:
+            'jugaad',
+
+        referenceId:
+            proposal.jugaad_id
+
     }).catch(
-        err =>
+        error =>
             console.error(
                 'Notification error:',
-                err
+                error
             )
     );
 
+
     return rejected;
+
 };
 
 
@@ -437,35 +514,54 @@ export const withdrawProposal = async (
             proposalId
         );
 
+
     if (!proposal) {
-        const error = new Error(
-            'Proposal not found.'
-        );
+
+        const error =
+            new Error(
+                'Proposal not found.'
+            );
 
         error.statusCode = 404;
+
         throw error;
+
     }
+
 
     if (
         proposal.helper_id.toString() !==
         user.id.toString()
     ) {
-        const error = new Error(
-            'Unauthorized: Only the proposal creator can withdraw this proposal.'
-        );
+
+        const error =
+            new Error(
+                'Unauthorized: Only the proposal creator can withdraw this proposal.'
+            );
 
         error.statusCode = 403;
+
         throw error;
+
     }
 
-    if (proposal.status !== 'pending') {
-        const error = new Error(
-            `Cannot withdraw proposal with status '${proposal.status}'.`
-        );
+
+    if (
+        proposal.status !==
+        'pending'
+    ) {
+
+        const error =
+            new Error(
+                `Cannot withdraw proposal with status '${proposal.status}'.`
+            );
 
         error.statusCode = 400;
+
         throw error;
+
     }
+
 
     const withdrawn =
         await proposalRepository.withdrawProposal(
@@ -473,24 +569,42 @@ export const withdrawProposal = async (
             user.id
         );
 
+
+    // ------------------------------------------------------------
     // Notify poster
+    // ------------------------------------------------------------
+
     notificationService.notifyUser({
-        userId: proposal.poster_id,
-        type: 'PROPOSAL_WITHDRAWN',
-        title: 'Proposal Withdrawn',
+
+        userId:
+            proposal.poster_id,
+
+        type:
+            'PROPOSAL_WITHDRAWN',
+
+        title:
+            'Proposal Withdrawn',
+
         message:
             `A helper has withdrawn their proposal for "${proposal.jugaad_title}".`,
-        referenceType: 'jugaad',
-        referenceId: proposal.jugaad_id
+
+        referenceType:
+            'jugaad',
+
+        referenceId:
+            proposal.jugaad_id
+
     }).catch(
-        err =>
+        error =>
             console.error(
                 'Notification error:',
-                err
+                error
             )
     );
 
+
     return withdrawn;
+
 };
 
 
@@ -509,80 +623,158 @@ export const createCounterOffer = async (
         message
     } = counterData;
 
+
     const proposal =
         await proposalRepository.findProposalById(
             proposalId
         );
 
+
     if (!proposal) {
-        const error = new Error(
-            'Proposal not found.'
-        );
+
+        const error =
+            new Error(
+                'Proposal not found.'
+            );
 
         error.statusCode = 404;
+
         throw error;
+
     }
+
 
     const isPoster =
         proposal.poster_id.toString() ===
         user.id.toString();
 
+
     const isHelper =
         proposal.helper_id.toString() ===
         user.id.toString();
 
-    if (!isPoster && !isHelper) {
-        const error = new Error(
-            'Unauthorized: Only the poster or helper can make a counter-offer.'
-        );
+
+    if (
+        !isPoster &&
+        !isHelper
+    ) {
+
+        const error =
+            new Error(
+                'Unauthorized: Only the poster or helper can make a counter-offer.'
+            );
 
         error.statusCode = 403;
+
         throw error;
+
     }
 
-    if (proposal.status !== 'pending') {
-        const error = new Error(
-            `Cannot make a counter-offer on a proposal with status '${proposal.status}'.`
-        );
+
+    if (
+        proposal.status !==
+        'pending'
+    ) {
+
+        const error =
+            new Error(
+                `Cannot make a counter-offer on a proposal with status '${proposal.status}'.`
+            );
 
         error.statusCode = 400;
+
         throw error;
+
     }
+
+
+    const parsedAmount =
+        parseFloat(
+            amount
+        );
+
+
+    if (
+        !Number.isFinite(
+            parsedAmount
+        ) ||
+        parsedAmount <= 0
+    ) {
+
+        const error =
+            new Error(
+                'A valid counter-offer amount is required.'
+            );
+
+        error.statusCode = 400;
+
+        throw error;
+
+    }
+
 
     const counterOffer =
         await proposalRepository.createCounterOffer({
+
             proposalId,
-            offeredBy: user.id,
-            amount: parseFloat(amount),
+
+            offeredBy:
+                user.id,
+
+            amount:
+                parsedAmount,
+
             message:
                 message
-                    ? message.trim()
+                    ? String(
+                          message
+                      ).trim()
                     : null
+
         });
 
+
+    // ------------------------------------------------------------
     // Notify the other party
+    // ------------------------------------------------------------
+
     const recipientId =
         isPoster
             ? proposal.helper_id
             : proposal.poster_id;
 
+
     notificationService.notifyUser({
-        userId: recipientId,
-        type: 'COUNTER_OFFER_RECEIVED',
-        title: 'New Counter-Offer',
+
+        userId:
+            recipientId,
+
+        type:
+            'COUNTER_OFFER_RECEIVED',
+
+        title:
+            'New Counter-Offer',
+
         message:
-            `${user.name || 'User'} sent a counter-offer of ₹${amount} for "${proposal.jugaad_title}".`,
-        referenceType: 'proposal',
-        referenceId: proposalId
+            `${user.name || 'User'} sent a counter-offer of ₹${parsedAmount} for "${proposal.jugaad_title}".`,
+
+        referenceType:
+            'proposal',
+
+        referenceId:
+            proposalId
+
     }).catch(
-        err =>
+        error =>
             console.error(
                 'Notification error:',
-                err
+                error
             )
     );
 
+
     return counterOffer;
+
 };
 
 
@@ -600,33 +792,50 @@ export const getCounterOffers = async (
             proposalId
         );
 
+
     if (!proposal) {
-        const error = new Error(
-            'Proposal not found.'
-        );
+
+        const error =
+            new Error(
+                'Proposal not found.'
+            );
 
         error.statusCode = 404;
+
         throw error;
+
     }
+
 
     const isPoster =
         proposal.poster_id.toString() ===
         user.id.toString();
 
+
     const isHelper =
         proposal.helper_id.toString() ===
         user.id.toString();
 
-    if (!isPoster && !isHelper) {
-        const error = new Error(
-            'Unauthorized: Only the poster or helper can view counter-offer history.'
-        );
+
+    if (
+        !isPoster &&
+        !isHelper
+    ) {
+
+        const error =
+            new Error(
+                'Unauthorized: Only the poster or helper can view counter-offer history.'
+            );
 
         error.statusCode = 403;
+
         throw error;
+
     }
+
 
     return await proposalRepository.findCounterOffersByProposalId(
         proposalId
     );
+
 };

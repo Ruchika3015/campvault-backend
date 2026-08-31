@@ -3,71 +3,148 @@ import * as notificationRepository
 
 
 // ================================================================
-// NOTIFICATION TYPE → PREFERENCE COLUMN
+// NOTIFICATION PREFERENCE MAP
 // ================================================================
 //
-// These names connect notification events to the switches in
-// Settings.
+// Every notification type is connected to the corresponding
+// setting in the notification_preferences table.
 //
-// Unknown notification types are allowed and will default to ON.
 // ================================================================
 
 const NOTIFICATION_PREFERENCE_MAP = {
 
-    // Someone expressed interest in a Jugaad
+    // ------------------------------------------------------------
+    // INTEREST REQUEST
+    // ------------------------------------------------------------
+
     INTEREST_REQUEST:
+        'interest_request_notifications',
+
+    INTEREST_REQUEST_RECEIVED:
         'interest_request_notifications',
 
     INTEREST_RECEIVED:
         'interest_request_notifications',
 
-    // Someone submitted a proposal
+
+    // ------------------------------------------------------------
+    // PROPOSALS
+    // ------------------------------------------------------------
+
     PROPOSAL_SUBMITTED:
         'proposal_notifications',
 
     NEW_PROPOSAL:
         'proposal_notifications',
 
-    // Your proposal was accepted
+    PROPOSAL_RECEIVED:
+        'proposal_notifications',
+
+    PROPOSAL_WITHDRAWN:
+        'proposal_notifications',
+
+
+    // ------------------------------------------------------------
+    // ACCEPTED PROPOSAL
+    // ------------------------------------------------------------
+
     PROPOSAL_ACCEPTED:
         'accepted_proposal_notifications',
 
-    // Your proposal was rejected
+    ACCEPTED_PROPOSAL:
+        'accepted_proposal_notifications',
+
+
+    // ------------------------------------------------------------
+    // REJECTED PROPOSAL
+    // ------------------------------------------------------------
+
     PROPOSAL_REJECTED:
         'rejected_proposal_notifications',
 
-    // Counter offer
+    REJECTED_PROPOSAL:
+        'rejected_proposal_notifications',
+
+
+    // ------------------------------------------------------------
+    // COUNTER OFFER
+    // ------------------------------------------------------------
+
     COUNTER_OFFER:
         'counter_offer_notifications',
 
     COUNTER_OFFER_RECEIVED:
         'counter_offer_notifications',
 
-    // Messages
+    NEW_COUNTER_OFFER:
+        'counter_offer_notifications',
+
+
+    // ------------------------------------------------------------
+    // MESSAGES
+    // ------------------------------------------------------------
+
     MESSAGE:
+        'message_notifications',
+
+    MESSAGE_RECEIVED:
         'message_notifications',
 
     NEW_MESSAGE:
         'message_notifications',
 
-    // Jugaad/task status changes
+
+    // ------------------------------------------------------------
+    // JUGAAD / TASK
+    // ------------------------------------------------------------
+
     JUGAAD_UPDATE:
+        'jugaad_task_notifications',
+
+    JUGAAD_TASK_UPDATE:
         'jugaad_task_notifications',
 
     TASK_UPDATE:
         'jugaad_task_notifications',
 
+    JUGAAD_STATUS_UPDATE:
+        'jugaad_task_notifications'
+
 };
 
 
 // ================================================================
-// CREATE NOTIFICATION
+// NOTIFY USER
 // ================================================================
 //
-// Creates a notification only when the corresponding notification
-// preference is enabled.
+// Central notification function.
 //
-// Unknown notification types continue to work normally.
+// ALL normal notification creation should come through here.
+//
+// Flow:
+//
+// 1. Validate data
+// 2. Find notification-specific preference
+// 3. Check notification-specific preference
+// 4. Check global in-app preference
+// 5. Create notification
+//
+// Example:
+//
+// message_notifications = TRUE
+// in_app_notifications = TRUE
+//                 ↓
+//          notification created
+//
+// message_notifications = FALSE
+//                 ↓
+//          notification skipped
+//
+// message_notifications = TRUE
+// in_app_notifications = FALSE
+//                 ↓
+//          notification skipped
+//
 // ================================================================
 
 export const notifyUser = async ({
@@ -88,59 +165,185 @@ export const notifyUser = async ({
 
 }) => {
 
-    const preferenceColumn =
-        NOTIFICATION_PREFERENCE_MAP[
-            String(type || '')
-                .toUpperCase()
-        ];
-
-
-    /*
-     * If this notification type has a corresponding Settings
-     * switch, check whether the user has enabled it.
-     *
-     * If there is no matching preference, preserve existing
-     * behavior and create the notification.
-     */
+    // ============================================================
+    // VALIDATE USER ID
+    // ============================================================
 
     if (
-        preferenceColumn
+        userId === undefined ||
+        userId === null
     ) {
 
-        const enabled =
-            await notificationRepository
-                .isNotificationTypeEnabled(
-                    userId,
-                    preferenceColumn
-                );
+        console.error(
+            'Notification skipped: userId is missing.'
+        );
 
-
-        if (!enabled) {
-
-            return null;
-
-        }
+        return null;
 
     }
 
 
-    return await notificationRepository.createNotification({
+    // ============================================================
+    // VALIDATE TYPE
+    // ============================================================
 
-        userId,
+    if (
+        !type
+    ) {
 
-        type,
+        console.error(
+            'Notification skipped: notification type is missing.'
+        );
 
-        title,
+        return null;
 
-        message,
+    }
 
-        referenceType,
 
-        referenceId,
+    // ============================================================
+    // VALIDATE TITLE
+    // ============================================================
 
-        client
+    if (
+        !title
+    ) {
 
-    });
+        console.error(
+            'Notification skipped: notification title is missing.'
+        );
+
+        return null;
+
+    }
+
+
+    // ============================================================
+    // VALIDATE MESSAGE
+    // ============================================================
+
+    if (
+        !message
+    ) {
+
+        console.error(
+            'Notification skipped: notification message is missing.'
+        );
+
+        return null;
+
+    }
+
+
+    // ============================================================
+    // FIND SPECIFIC NOTIFICATION PREFERENCE
+    // ============================================================
+
+    const preferenceColumn =
+        NOTIFICATION_PREFERENCE_MAP[type];
+
+
+    // ============================================================
+    // UNKNOWN NOTIFICATION TYPE
+    // ============================================================
+
+    if (
+        !preferenceColumn
+    ) {
+
+        console.warn(
+            `Notification type "${type}" has no preference mapping. Notification skipped.`
+        );
+
+        return null;
+
+    }
+
+
+    // ============================================================
+    // CHECK SPECIFIC NOTIFICATION SETTING
+    // ============================================================
+
+    const typeEnabled =
+        await notificationRepository
+            .isNotificationTypeEnabled(
+                userId,
+                preferenceColumn
+            );
+
+
+    // ============================================================
+    // SPECIFIC NOTIFICATION IS OFF
+    // ============================================================
+
+    if (
+        !typeEnabled
+    ) {
+
+        console.log(
+            `Notification skipped: ${type} is disabled for user ${userId}.`
+        );
+
+        return null;
+
+    }
+
+
+    // ============================================================
+    // CHECK GLOBAL IN-APP NOTIFICATION SETTING
+    // ============================================================
+    //
+    // This is the master switch for notifications appearing
+    // inside the application.
+    //
+    // ============================================================
+
+    const inAppEnabled =
+        await notificationRepository
+            .isNotificationTypeEnabled(
+                userId,
+                'in_app_notifications'
+            );
+
+
+    // ============================================================
+    // IN-APP NOTIFICATIONS ARE OFF
+    // ============================================================
+
+    if (
+        !inAppEnabled
+    ) {
+
+        console.log(
+            `Notification skipped: in-app notifications are disabled for user ${userId}.`
+        );
+
+        return null;
+
+    }
+
+
+    // ============================================================
+    // CREATE NOTIFICATION
+    // ============================================================
+
+    return await notificationRepository
+        .createNotification({
+
+            userId,
+
+            type,
+
+            title,
+
+            message,
+
+            referenceType,
+
+            referenceId,
+
+            client
+
+        });
 
 };
 
@@ -182,16 +385,20 @@ export const markNotificationRead = async (
             );
 
 
-    if (!updated) {
+    // ============================================================
+    // NOTIFICATION NOT FOUND
+    // ============================================================
+
+    if (
+        !updated
+    ) {
 
         const error =
             new Error(
                 'Notification not found or access denied.'
             );
 
-
         error.statusCode = 404;
-
 
         throw error;
 
@@ -220,8 +427,7 @@ export const markAllNotificationsRead = async (
 
     return {
 
-        success:
-            true,
+        success: true,
 
         count:
             updated.length
@@ -232,278 +438,78 @@ export const markAllNotificationsRead = async (
 
 
 // ================================================================
-// GET NOTIFICATION PREFERENCES
+// CHECK WHETHER A NOTIFICATION TYPE IS ENABLED
 // ================================================================
 //
-// Returns the user's current notification Settings.
+// Utility function.
 //
-// Example:
+// Other backend services can use:
 //
-// {
-//     interestRequestNotifications: true,
-//     proposalNotifications: true,
-//     acceptedProposalNotifications: false,
-//     ...
-// }
+// isNotificationEnabled(userId, 'NEW_MESSAGE')
+//
 // ================================================================
 
-export const getNotificationPreferences = async (
-    userId
-) => {
-
-    const preferences =
-        await notificationRepository
-            .getNotificationPreferences(
-                userId
-            );
-
-
-    if (!preferences) {
-
-        const error =
-            new Error(
-                'Unable to load notification preferences.'
-            );
-
-
-        error.statusCode = 500;
-
-
-        throw error;
-
-    }
-
-
-    return {
-
-        interestRequestNotifications:
-            Boolean(
-                preferences
-                    .interest_request_notifications
-            ),
-
-        proposalNotifications:
-            Boolean(
-                preferences
-                    .proposal_notifications
-            ),
-
-        acceptedProposalNotifications:
-            Boolean(
-                preferences
-                    .accepted_proposal_notifications
-            ),
-
-        rejectedProposalNotifications:
-            Boolean(
-                preferences
-                    .rejected_proposal_notifications
-            ),
-
-        counterOfferNotifications:
-            Boolean(
-                preferences
-                    .counter_offer_notifications
-            ),
-
-        messageNotifications:
-            Boolean(
-                preferences
-                    .message_notifications
-            ),
-
-        jugaadTaskNotifications:
-            Boolean(
-                preferences
-                    .jugaad_task_notifications
-            ),
-
-        emailNotifications:
-            Boolean(
-                preferences
-                    .email_notifications
-            ),
-
-        inAppNotifications:
-            Boolean(
-                preferences
-                    .in_app_notifications
-            ),
-
-        createdAt:
-            preferences.created_at,
-
-        updatedAt:
-            preferences.updated_at
-
-    };
-
-};
-
-
-// ================================================================
-// UPDATE NOTIFICATION PREFERENCES
-// ================================================================
-//
-// Updates only the user's notification preferences.
-//
-// Every field is converted explicitly to Boolean so the database
-// always receives predictable TRUE/FALSE values.
-// ================================================================
-
-export const updateNotificationPreferences = async (
+export const isNotificationEnabled = async (
     userId,
-    preferences
+    type
 ) => {
 
-    const cleanPreferences = {
+    // ------------------------------------------------------------
+    // Find specific preference
+    // ------------------------------------------------------------
 
-        interestRequestNotifications:
-            Boolean(
-                preferences
-                    ?.interestRequestNotifications
-            ),
-
-        proposalNotifications:
-            Boolean(
-                preferences
-                    ?.proposalNotifications
-            ),
-
-        acceptedProposalNotifications:
-            Boolean(
-                preferences
-                    ?.acceptedProposalNotifications
-            ),
-
-        rejectedProposalNotifications:
-            Boolean(
-                preferences
-                    ?.rejectedProposalNotifications
-            ),
-
-        counterOfferNotifications:
-            Boolean(
-                preferences
-                    ?.counterOfferNotifications
-            ),
-
-        messageNotifications:
-            Boolean(
-                preferences
-                    ?.messageNotifications
-            ),
-
-        jugaadTaskNotifications:
-            Boolean(
-                preferences
-                    ?.jugaadTaskNotifications
-            ),
-
-        emailNotifications:
-            Boolean(
-                preferences
-                    ?.emailNotifications
-            ),
-
-        inAppNotifications:
-            Boolean(
-                preferences
-                    ?.inAppNotifications
-            )
-
-    };
+    const preferenceColumn =
+        NOTIFICATION_PREFERENCE_MAP[type];
 
 
-    const updated =
-        await notificationRepository
-            .updateNotificationPreferences(
+    // ------------------------------------------------------------
+    // Unknown type
+    // ------------------------------------------------------------
 
-                userId,
+    if (
+        !preferenceColumn
+    ) {
 
-                cleanPreferences
-
-            );
-
-
-    if (!updated) {
-
-        const error =
-            new Error(
-                'Unable to update notification preferences.'
-            );
-
-
-        error.statusCode = 500;
-
-
-        throw error;
+        return false;
 
     }
 
 
-    return {
+    // ------------------------------------------------------------
+    // Check specific preference
+    // ------------------------------------------------------------
 
-        interestRequestNotifications:
-            Boolean(
-                updated
-                    .interest_request_notifications
-            ),
+    const typeEnabled =
+        await notificationRepository
+            .isNotificationTypeEnabled(
+                userId,
+                preferenceColumn
+            );
 
-        proposalNotifications:
-            Boolean(
-                updated
-                    .proposal_notifications
-            ),
 
-        acceptedProposalNotifications:
-            Boolean(
-                updated
-                    .accepted_proposal_notifications
-            ),
+    if (
+        !typeEnabled
+    ) {
 
-        rejectedProposalNotifications:
-            Boolean(
-                updated
-                    .rejected_proposal_notifications
-            ),
+        return false;
 
-        counterOfferNotifications:
-            Boolean(
-                updated
-                    .counter_offer_notifications
-            ),
+    }
 
-        messageNotifications:
-            Boolean(
-                updated
-                    .message_notifications
-            ),
 
-        jugaadTaskNotifications:
-            Boolean(
-                updated
-                    .jugaad_task_notifications
-            ),
+    // ------------------------------------------------------------
+    // Check global in-app preference
+    // ------------------------------------------------------------
 
-        emailNotifications:
-            Boolean(
-                updated
-                    .email_notifications
-            ),
+    const inAppEnabled =
+        await notificationRepository
+            .isNotificationTypeEnabled(
+                userId,
+                'in_app_notifications'
+            );
 
-        inAppNotifications:
-            Boolean(
-                updated
-                    .in_app_notifications
-            ),
 
-        createdAt:
-            updated.created_at,
-
-        updatedAt:
-            updated.updated_at
-
-    };
+    return Boolean(
+        inAppEnabled
+    );
 
 };
