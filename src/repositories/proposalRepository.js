@@ -6,16 +6,13 @@ import * as notificationRepository from './notificationRepository.js';
 // CREATE PROPOSAL
 // ================================================================
 //
-// IMPORTANT:
-//
 // Student clicks INTERESTED / SEND PROPOSAL
 //          ↓
 // Proposal is created
 //          ↓
-// NO conversation
-// NO message
-//
-// Conversation is created/reused ONLY after poster accepts.
+// No conversation yet
+//          ↓
+// Conversation is created when proposal is accepted
 // ================================================================
 
 export const createProposal = async ({
@@ -48,6 +45,7 @@ export const createProposal = async ({
         RETURNING *;
     `;
 
+
     const values = [
         Number(jugaadId),
         Number(helperId),
@@ -56,12 +54,14 @@ export const createProposal = async ({
         estimatedCompletion
     ];
 
+
     const {
         rows
     } = await pool.query(
         query,
         values
     );
+
 
     return rows[0] || null;
 };
@@ -105,60 +105,15 @@ export const findProposalById = async (
         JOIN users poster
             ON poster.id = j.poster_id
 
-        /*
-         * First look for the exact conversation belonging
-         * to this exact proposal and Jugaad.
-         *
-         * Older conversations may not have proposal_id,
-         * so a fallback is also allowed.
-         */
-        LEFT JOIN LATERAL (
-            SELECT
-                c.id,
-                c.proposal_id,
-                c.jugaad_id
-
-            FROM conversations c
-
-            WHERE
-                (
-                    c.proposal_id = p.id
-                    AND c.jugaad_id = p.jugaad_id
-                )
-
-                OR
-
-                (
-                    c.proposal_id IS NULL
-                    AND c.jugaad_id = p.jugaad_id
-                    AND c.user_one_id =
-                        LEAST(
-                            j.poster_id,
-                            p.helper_id
-                        )
-                    AND c.user_two_id =
-                        GREATEST(
-                            j.poster_id,
-                            p.helper_id
-                        )
-                )
-
-            ORDER BY
-                CASE
-                    WHEN c.proposal_id = p.id
-                        THEN 0
-                    ELSE 1
-                END,
-
-                c.id DESC
-
-            LIMIT 1
-        ) c ON TRUE
+        LEFT JOIN conversations c
+            ON c.proposal_id = p.id
+            AND c.jugaad_id = p.jugaad_id
 
         WHERE p.id = $1
 
         LIMIT 1;
     `;
+
 
     const {
         rows
@@ -169,6 +124,7 @@ export const findProposalById = async (
         ]
     );
 
+
     return rows[0] || null;
 };
 
@@ -177,962 +133,1332 @@ export const findProposalById = async (
 // FIND PROPOSAL BY JUGAAD + HELPER
 // ================================================================
 
-export const findProposalByJugaadAndHelper = async (
-    jugaadId,
-    helperId
-) => {
-
-    const query = `
-        SELECT *
-        FROM jugaad_proposals
-
-        WHERE jugaad_id = $1
-          AND helper_id = $2
-
-        LIMIT 1;
-    `;
-
-    const {
-        rows
-    } = await pool.query(
-        query,
-        [
-            Number(jugaadId),
-            Number(helperId)
-        ]
-    );
-
-    return rows[0] || null;
-};
-
-
-// ================================================================
-// FIND PROPOSALS FOR A JUGAAD
-// ================================================================
-//
-// This is the important function for:
-// My Jugaads → Open a Jugaad → Proposals Received
-//
-// It returns:
-// - helper_name
-// - proposal status
-// - proposed price
-// - conversation_id
-// - latest counter offer
-// ================================================================
-
-export const findProposalsByJugaadId = async (
-    jugaadId
-) => {
-
-    const query = `
-        SELECT
-            p.id,
-            p.jugaad_id,
-            p.helper_id,
-            p.proposal_message,
-            p.proposed_price,
-            p.estimated_completion,
-            p.status,
-            p.created_at,
-            p.updated_at,
-
-            helper.name AS helper_name,
-            helper.email AS helper_email,
-            helper.number AS helper_number,
-            helper.location AS helper_location,
-
-            /*
-             * Exact conversation for this proposal.
-             */
-            c.id AS conversation_id,
-
-            co.amount AS latest_counter_amount,
-            co.message AS latest_counter_message,
-            co.offered_by AS latest_counter_offered_by,
-            co.status AS latest_counter_status
-
-        FROM jugaad_proposals p
-
-        JOIN users helper
-            ON helper.id = p.helper_id
-
-        JOIN jugaads j
-            ON j.id = p.jugaad_id
-
-        /*
-         * IMPORTANT:
-         *
-         * Match the exact proposal conversation first.
-         *
-         * If an older row has no proposal_id,
-         * use the old user-pair conversation as fallback.
-         */
-        LEFT JOIN LATERAL (
-            SELECT
-                c.id,
-                c.proposal_id,
-                c.jugaad_id
-
-            FROM conversations c
-
-            WHERE
-                (
-                    c.proposal_id = p.id
-                    AND c.jugaad_id = p.jugaad_id
-                )
-
-                OR
-
-                (
-                    c.proposal_id IS NULL
-                    AND c.jugaad_id = p.jugaad_id
-                    AND c.user_one_id =
-                        LEAST(
-                            j.poster_id,
-                            p.helper_id
-                        )
-                    AND c.user_two_id =
-                        GREATEST(
-                            j.poster_id,
-                            p.helper_id
-                        )
-                )
-
-            ORDER BY
-                CASE
-                    WHEN c.proposal_id = p.id
-                        THEN 0
-                    ELSE 1
-                END,
-
-                c.id DESC
-
-            LIMIT 1
-        ) c ON TRUE
-
-        LEFT JOIN LATERAL (
-            SELECT
-                amount,
-                message,
-                offered_by,
-                status
-
-            FROM proposal_counter_offers
-
-            WHERE proposal_id = p.id
-
-            ORDER BY
-                created_at DESC
-
-            LIMIT 1
-        ) co ON TRUE
-
-        WHERE p.jugaad_id = $1
-
-        ORDER BY
-            p.created_at DESC;
-    `;
-
-    const {
-        rows
-    } = await pool.query(
-        query,
-        [
-            Number(jugaadId)
-        ]
-    );
-
-    return rows;
-};
-
-
-// ================================================================
-// FIND MY PROPOSALS
-// ================================================================
-// These are proposals submitted by the current student.
-// ================================================================
-
-export const findMyProposals = async (
-    helperId
-) => {
-
-    const query = `
-        SELECT
-            p.id,
-            p.jugaad_id,
-            p.helper_id,
-            p.proposal_message,
-            p.proposed_price,
-            p.estimated_completion,
-            p.status,
-            p.created_at,
-            p.updated_at,
-
-            j.title AS jugaad_title,
-            j.budget AS jugaad_budget,
-            j.deadline AS jugaad_deadline,
-            j.status AS jugaad_status,
-
-            poster.name AS poster_name,
-
-            c.id AS conversation_id,
-
-            co.amount AS latest_counter_amount,
-            co.message AS latest_counter_message,
-            co.offered_by AS latest_counter_offered_by
-
-        FROM jugaad_proposals p
-
-        JOIN jugaads j
-            ON j.id = p.jugaad_id
-
-        JOIN users poster
-            ON poster.id = j.poster_id
-
-        LEFT JOIN LATERAL (
-            SELECT
-                c.id,
-                c.proposal_id,
-                c.jugaad_id
-
-            FROM conversations c
-
-            WHERE
-                (
-                    c.proposal_id = p.id
-                    AND c.jugaad_id = p.jugaad_id
-                )
-
-                OR
-
-                (
-                    c.proposal_id IS NULL
-                    AND c.jugaad_id = p.jugaad_id
-                    AND c.user_one_id =
-                        LEAST(
-                            j.poster_id,
-                            p.helper_id
-                        )
-                    AND c.user_two_id =
-                        GREATEST(
-                            j.poster_id,
-                            p.helper_id
-                        )
-                )
-
-            ORDER BY
-                CASE
-                    WHEN c.proposal_id = p.id
-                        THEN 0
-                    ELSE 1
-                END,
-
-                c.id DESC
-
-            LIMIT 1
-        ) c ON TRUE
-
-        LEFT JOIN LATERAL (
-            SELECT
-                amount,
-                message,
-                offered_by
-
-            FROM proposal_counter_offers
-
-            WHERE proposal_id = p.id
-
-            ORDER BY
-                created_at DESC
-
-            LIMIT 1
-        ) co ON TRUE
-
-        WHERE p.helper_id = $1
-
-        ORDER BY
-            p.created_at DESC;
-    `;
-
-    const {
-        rows
-    } = await pool.query(
-        query,
-        [
-            Number(helperId)
-        ]
-    );
-
-    return rows;
-};
-
-
-// ================================================================
-// FIND RECEIVED PROPOSALS
-// ================================================================
-//
-// This is used for proposal lists received by the Jugaad owner.
-// ================================================================
-
-export const findReceivedProposals = async (
-    posterId
-) => {
-
-    const query = `
-        SELECT
-            p.id,
-            p.jugaad_id,
-            p.helper_id,
-            p.proposal_message,
-            p.proposed_price,
-            p.estimated_completion,
-            p.status,
-            p.created_at,
-            p.updated_at,
-
-            j.title AS jugaad_title,
-            j.status AS jugaad_status,
-
-            helper.name AS helper_name,
-            helper.email AS helper_email,
-            helper.number AS helper_number,
-            helper.location AS helper_location,
-
-            c.id AS conversation_id,
-
-            co.amount AS latest_counter_amount,
-            co.message AS latest_counter_message,
-            co.offered_by AS latest_counter_offered_by
-
-        FROM jugaad_proposals p
-
-        JOIN jugaads j
-            ON j.id = p.jugaad_id
-
-        JOIN users helper
-            ON helper.id = p.helper_id
-
-        LEFT JOIN LATERAL (
-            SELECT
-                c.id,
-                c.proposal_id,
-                c.jugaad_id
-
-            FROM conversations c
-
-            WHERE
-                (
-                    c.proposal_id = p.id
-                    AND c.jugaad_id = p.jugaad_id
-                )
-
-                OR
-
-                (
-                    c.proposal_id IS NULL
-                    AND c.jugaad_id = p.jugaad_id
-                    AND c.user_one_id =
-                        LEAST(
-                            j.poster_id,
-                            p.helper_id
-                        )
-                    AND c.user_two_id =
-                        GREATEST(
-                            j.poster_id,
-                            p.helper_id
-                        )
-                )
-
-            ORDER BY
-                CASE
-                    WHEN c.proposal_id = p.id
-                        THEN 0
-                    ELSE 1
-                END,
-
-                c.id DESC
-
-            LIMIT 1
-        ) c ON TRUE
-
-        LEFT JOIN LATERAL (
-            SELECT
-                amount,
-                message,
-                offered_by
-
-            FROM proposal_counter_offers
-
-            WHERE proposal_id = p.id
-
-            ORDER BY
-                created_at DESC
-
-            LIMIT 1
-        ) co ON TRUE
-
-        WHERE j.poster_id = $1
-
-        ORDER BY
-            p.created_at DESC;
-    `;
-
-    const {
-        rows
-    } = await pool.query(
-        query,
-        [
-            Number(posterId)
-        ]
-    );
-
-    return rows;
-};
-
-
-// ================================================================
-// ACCEPT PROPOSAL TRANSACTION
-// ================================================================
-//
-// This is the ONLY place where a conversation is created/reused.
-//
-// INTERESTED:
-//     proposal only
-//
-// ACCEPT:
-//     conversation created/reused
-// ================================================================
-
-export const acceptProposalTransaction = async (
-    proposalId,
-    posterId
-) => {
-
-    const client =
-        await pool.connect();
-
-    try {
-
-        await client.query(
-            'BEGIN'
-        );
-
-
-        // ============================================================
-        // 1. GET PROPOSAL + JUGAAD
-        // ============================================================
-
-        const propQuery = `
-            SELECT
-                p.*,
-
-                j.poster_id,
-                j.status AS jugaad_status,
-                j.title AS jugaad_title
-
-            FROM jugaad_proposals p
-
-            JOIN jugaads j
-                ON j.id = p.jugaad_id
-
-            WHERE p.id = $1
-
-            FOR UPDATE;
-        `;
-
-        const {
-            rows: propRows
-        } = await client.query(
-            propQuery,
-            [
-                Number(proposalId)
-            ]
-        );
-
-
-        if (
-            propRows.length === 0
-        ) {
-
-            const error =
-                new Error(
-                    'Proposal not found.'
-                );
-
-            error.statusCode = 404;
-
-            throw error;
-        }
-
-
-        const proposal =
-            propRows[0];
-
-
-        // ============================================================
-        // 2. VERIFY POSTER
-        // ============================================================
-
-        if (
-            Number(
-                proposal.poster_id
-            ) !==
-            Number(posterId)
-        ) {
-
-            const error =
-                new Error(
-                    'Unauthorized: Only the Jugaad owner can accept proposals.'
-                );
-
-            error.statusCode = 403;
-
-            throw error;
-        }
-
-
-        // ============================================================
-        // 3. PROPOSAL MUST BE PENDING
-        // ============================================================
-
-        if (
-            proposal.status !==
-            'pending'
-        ) {
-
-            const error =
-                new Error(
-                    `Cannot accept proposal with status '${proposal.status}'.`
-                );
-
-            error.statusCode = 400;
-
-            throw error;
-        }
-
-
-        // ============================================================
-        // 4. JUGAAD MUST BE OPEN
-        // ============================================================
-
-        if (
-            proposal.jugaad_status !==
-            'open'
-        ) {
-
-            const error =
-                new Error(
-                    `Cannot accept proposal on a Jugaad that is already '${proposal.jugaad_status}'.`
-                );
-
-            error.statusCode = 400;
-
-            throw error;
-        }
-
-
-        // ============================================================
-        // 5. ACCEPT PROPOSAL
-        // ============================================================
-
-        const updateProposalQuery = `
-            UPDATE jugaad_proposals
-
-            SET
-                status = 'accepted',
-                updated_at = CURRENT_TIMESTAMP
-
-            WHERE id = $1
-
-            RETURNING *;
-        `;
-
-        const {
-            rows:
-                acceptedProposalRows
-        } = await client.query(
-            updateProposalQuery,
-            [
-                Number(proposalId)
-            ]
-        );
-
-
-        const acceptedProposal =
-            acceptedProposalRows[0];
-
-
-        // ============================================================
-        // 6. ASSIGN HELPER TO JUGAAD
-        // ============================================================
-
-        const updateJugaadQuery = `
-            UPDATE jugaads
-
-            SET
-                status = 'assigned',
-                helper_id = $1,
-                updated_at = CURRENT_TIMESTAMP
-
-            WHERE id = $2
-
-            RETURNING *;
-        `;
-
-        const {
-            rows:
-                updatedJugaadRows
-        } = await client.query(
-            updateJugaadQuery,
-            [
-                Number(
-                    proposal.helper_id
-                ),
-
-                Number(
-                    proposal.jugaad_id
-                )
-            ]
-        );
-
-
-        const updatedJugaad =
-            updatedJugaadRows[0];
-
-
-        if (
-            !updatedJugaad
-        ) {
-
-            const error =
-                new Error(
-                    'Unable to assign helper to the Jugaad.'
-                );
-
-            error.statusCode = 500;
-
-            throw error;
-        }
-
-
-        // ============================================================
-        // 7. REJECT OTHER PENDING PROPOSALS
-        // ============================================================
-
-        const rejectOthersQuery = `
-            UPDATE jugaad_proposals
-
-            SET
-                status = 'rejected',
-                updated_at = CURRENT_TIMESTAMP
+export const findProposalByJugaadAndHelper =
+    async (
+        jugaadId,
+        helperId
+    ) => {
+
+        const query = `
+            SELECT *
+            FROM jugaad_proposals
 
             WHERE jugaad_id = $1
-              AND id != $2
-              AND status = 'pending'
+              AND helper_id = $2
 
-            RETURNING
-                id,
-                helper_id;
-        `;
-
-        const {
-            rows:
-                rejectedHelpers
-        } = await client.query(
-            rejectOthersQuery,
-            [
-                Number(
-                    proposal.jugaad_id
-                ),
-
-                Number(
-                    proposalId
-                )
-            ]
-        );
-
-
-        // ============================================================
-        // 8. NORMALIZE USER PAIR
-        // ============================================================
-
-        const firstUserId =
-            Number(posterId);
-
-        const secondUserId =
-            Number(
-                proposal.helper_id
-            );
-
-
-        if (
-            !Number.isInteger(
-                firstUserId
-            ) ||
-            !Number.isInteger(
-                secondUserId
-            )
-        ) {
-
-            const error =
-                new Error(
-                    'Invalid user ID while creating conversation.'
-                );
-
-            error.statusCode = 400;
-
-            throw error;
-        }
-
-
-        const userOneId =
-            Math.min(
-                firstUserId,
-                secondUserId
-            );
-
-
-        const userTwoId =
-            Math.max(
-                firstUserId,
-                secondUserId
-            );
-
-
-        // ============================================================
-        // 9. CREATE OR REUSE ONE CONVERSATION
-        // ============================================================
-
-        const createConversationQuery = `
-            INSERT INTO conversations (
-                user_one_id,
-                user_two_id,
-                jugaad_id,
-                proposal_id
-            )
-
-            VALUES (
-                $1,
-                $2,
-                $3,
-                $4
-            )
-
-            ON CONFLICT (
-                user_one_id,
-                user_two_id
-            )
-
-            DO UPDATE SET
-                jugaad_id =
-                    EXCLUDED.jugaad_id,
-
-                proposal_id =
-                    EXCLUDED.proposal_id
-
-            RETURNING *;
+            LIMIT 1;
         `;
 
 
         const {
-            rows:
-                conversationRows
-        } = await client.query(
-            createConversationQuery,
+            rows
+        } = await pool.query(
+            query,
             [
-                userOneId,
-                userTwoId,
-
-                Number(
-                    proposal.jugaad_id
-                ),
-
-                Number(
-                    proposalId
-                )
+                Number(jugaadId),
+                Number(helperId)
             ]
         );
 
 
-        const conversation =
-            conversationRows[0];
+        return rows[0] || null;
+    };
 
 
-        if (
-            !conversation
-        ) {
+// ================================================================
+// ENSURE CONVERSATION EXISTS FOR ACCEPTED PROPOSAL
+// ================================================================
+//
+// This repairs old accepted proposals where:
+// - proposal is already accepted
+// - but conversation was never created
+//
+// Safe to call repeatedly.
+// ================================================================
 
-            const error =
-                new Error(
-                    'Unable to create or reuse conversation.'
-                );
+export const ensureConversationForAcceptedProposal =
+    async (
+        proposalId
+    ) => {
 
-            error.statusCode = 500;
-
-            throw error;
-        }
-
-
-        // ============================================================
-        // 10. ADD BOTH USERS AS PARTICIPANTS
-        // ============================================================
-
-        const addParticipantsQuery = `
-            INSERT INTO conversation_participants (
-                conversation_id,
-                user_id
-            )
-
-            VALUES
-                ($1, $2),
-                ($1, $3)
-
-            ON CONFLICT (
-                conversation_id,
-                user_id
-            )
-
-            DO NOTHING;
-        `;
+        const client =
+            await pool.connect();
 
 
-        await client.query(
-            addParticipantsQuery,
-            [
-                Number(
-                    conversation.id
-                ),
+        try {
 
-                firstUserId,
-                secondUserId
-            ]
-        );
-
-
-        // ============================================================
-        // 11. NOTIFY ACCEPTED HELPER
-        // ============================================================
-
-        const acceptedNotificationEnabled =
-            await notificationRepository.isNotificationTypeEnabled(
-                secondUserId,
-                'accepted_proposal_notifications'
+            await client.query(
+                'BEGIN'
             );
 
 
-        if (
-            acceptedNotificationEnabled
-        ) {
+            // --------------------------------------------------------
+            // 1. LOAD PROPOSAL + JUGAAD
+            // --------------------------------------------------------
 
-            await notificationRepository.createNotification({
+            const proposalQuery = `
+                SELECT
+                    p.id,
+                    p.jugaad_id,
+                    p.helper_id,
+                    p.proposal_message,
+                    p.proposed_price,
+                    p.status,
 
-                userId:
-                    secondUserId,
+                    j.poster_id,
+                    j.title AS jugaad_title
 
-                type:
-                    'PROPOSAL_ACCEPTED',
+                FROM jugaad_proposals p
 
-                title:
-                    'Proposal Accepted!',
+                JOIN jugaads j
+                    ON j.id = p.jugaad_id
 
-                message:
-                    `Congratulations! Your proposal for "${proposal.jugaad_title}" has been accepted. Conversation is now unlocked!`,
+                WHERE p.id = $1
 
-                referenceType:
-                    'jugaad',
+                LIMIT 1
 
-                referenceId:
-                    Number(
-                        proposal.jugaad_id
-                    ),
-
-                client
-
-            });
-
-        }
-
-
-        // ============================================================
-        // 12. NOTIFY REJECTED HELPERS
-        // ============================================================
-
-        for (
-            const rejected
-            of rejectedHelpers
-        ) {
-
-            const notifyRejectedQuery = `
-                INSERT INTO notifications (
-                    user_id,
-                    type,
-                    title,
-                    message,
-                    reference_type,
-                    reference_id
-                )
-
-                VALUES (
-                    $1,
-                    'PROPOSAL_REJECTED',
-                    'Proposal Update',
-                    $2,
-                    'jugaad',
-                    $3
-                );
+                FOR UPDATE;
             `;
 
 
-            await client.query(
-                notifyRejectedQuery,
+            const {
+                rows:
+                    proposalRows
+            } = await client.query(
+                proposalQuery,
                 [
                     Number(
-                        rejected.helper_id
-                    ),
+                        proposalId
+                    )
+                ]
+            );
 
-                    `Your proposal for "${proposal.jugaad_title}" was not selected as another proposal was accepted.`,
+
+            if (
+                proposalRows.length === 0
+            ) {
+
+                await client.query(
+                    'ROLLBACK'
+                );
+
+                return null;
+            }
+
+
+            const proposal =
+                proposalRows[0];
+
+
+            // --------------------------------------------------------
+            // 2. ONLY ACCEPTED PROPOSALS
+            // --------------------------------------------------------
+
+            if (
+                String(
+                    proposal.status
+                ).toLowerCase() !==
+                'accepted'
+            ) {
+
+                await client.query(
+                    'ROLLBACK'
+                );
+
+                return null;
+            }
+
+
+            // --------------------------------------------------------
+            // 3. CHECK EXISTING CONVERSATION
+            // --------------------------------------------------------
+
+            const existingConversationQuery = `
+                SELECT
+                    id,
+                    jugaad_id,
+                    proposal_id
+
+                FROM conversations
+
+                WHERE proposal_id = $1
+                  AND jugaad_id = $2
+
+                LIMIT 1;
+            `;
+
+
+            const {
+                rows:
+                    existingConversationRows
+            } = await client.query(
+                existingConversationQuery,
+                [
+                    Number(
+                        proposal.id
+                    ),
 
                     Number(
                         proposal.jugaad_id
                     )
                 ]
             );
+
+
+            let conversation =
+                existingConversationRows[0] ||
+                null;
+
+
+            // --------------------------------------------------------
+            // 4. CREATE CONVERSATION IF MISSING
+            // --------------------------------------------------------
+
+            if (!conversation) {
+
+                const createConversationQuery = `
+                    INSERT INTO conversations (
+                        jugaad_id,
+                        proposal_id
+                    )
+
+                    VALUES (
+                        $1,
+                        $2
+                    )
+
+                    ON CONFLICT (
+                        jugaad_id,
+                        proposal_id
+                    )
+
+                    DO UPDATE SET
+                        jugaad_id =
+                            EXCLUDED.jugaad_id
+
+                    RETURNING *;
+                `;
+
+
+                const {
+                    rows:
+                        conversationRows
+                } = await client.query(
+                    createConversationQuery,
+                    [
+                        Number(
+                            proposal.jugaad_id
+                        ),
+
+                        Number(
+                            proposal.id
+                        )
+                    ]
+                );
+
+
+                conversation =
+                    conversationRows[0];
+            }
+
+
+            if (
+                !conversation ||
+                !conversation.id
+            ) {
+
+                throw new Error(
+                    'Unable to create conversation.'
+                );
+            }
+
+
+            // --------------------------------------------------------
+            // 5. ADD POSTER + HELPER
+            // --------------------------------------------------------
+
+            const participantsQuery = `
+                INSERT INTO conversation_participants (
+                    conversation_id,
+                    user_id
+                )
+
+                VALUES
+                    ($1, $2),
+                    ($1, $3)
+
+                ON CONFLICT (
+                    conversation_id,
+                    user_id
+                )
+
+                DO NOTHING;
+            `;
+
+
+            await client.query(
+                participantsQuery,
+                [
+                    Number(
+                        conversation.id
+                    ),
+
+                    Number(
+                        proposal.poster_id
+                    ),
+
+                    Number(
+                        proposal.helper_id
+                    )
+                ]
+            );
+
+
+            // --------------------------------------------------------
+            // 6. ADD ORIGINAL PROPOSAL MESSAGE IF NONE EXISTS
+            // --------------------------------------------------------
+
+            const messageCheckQuery = `
+                SELECT id
+
+                FROM messages
+
+                WHERE conversation_id = $1
+
+                LIMIT 1;
+            `;
+
+
+            const {
+                rows:
+                    existingMessageRows
+            } = await client.query(
+                messageCheckQuery,
+                [
+                    Number(
+                        conversation.id
+                    )
+                ]
+            );
+
+
+            if (
+                existingMessageRows.length === 0 &&
+                proposal.proposal_message
+            ) {
+
+                const messageQuery = `
+                    INSERT INTO messages (
+                        conversation_id,
+                        sender_id,
+                        content
+                    )
+
+                    VALUES (
+                        $1,
+                        $2,
+                        $3
+                    )
+
+                    RETURNING id;
+                `;
+
+
+                await client.query(
+                    messageQuery,
+                    [
+                        Number(
+                            conversation.id
+                        ),
+
+                        Number(
+                            proposal.helper_id
+                        ),
+
+                        proposal.proposal_message
+                    ]
+                );
+            }
+
+
+            // --------------------------------------------------------
+            // 7. COMMIT
+            // --------------------------------------------------------
+
+            await client.query(
+                'COMMIT'
+            );
+
+
+            return conversation;
+
+
+        } catch (error) {
+
+            await client.query(
+                'ROLLBACK'
+            );
+
+
+            console.error(
+                'ensureConversationForAcceptedProposal error:',
+                error
+            );
+
+
+            throw error;
+
+
+        } finally {
+
+            client.release();
+        }
+    };
+
+
+// ================================================================
+// FIND PROPOSALS FOR A JUGAAD
+// ================================================================
+//
+// IMPORTANT:
+// After retrieving proposals, accepted proposals are checked.
+// If an accepted proposal has no conversation, we repair it.
+// ================================================================
+
+export const findProposalsByJugaadId =
+    async (
+        jugaadId
+    ) => {
+
+        const query = `
+            SELECT
+                p.id,
+                p.jugaad_id,
+                p.helper_id,
+
+                p.proposal_message,
+                p.proposed_price,
+                p.estimated_completion,
+
+                p.status,
+                p.created_at,
+                p.updated_at,
+
+                helper.name AS helper_name,
+                helper.email AS helper_email,
+                helper.number AS helper_number,
+                helper.location AS helper_location,
+
+                c.id AS conversation_id,
+
+                co.amount AS latest_counter_amount,
+                co.message AS latest_counter_message,
+                co.offered_by AS latest_counter_offered_by,
+                co.status AS latest_counter_status
+
+            FROM jugaad_proposals p
+
+            JOIN users helper
+                ON helper.id = p.helper_id
+
+            JOIN jugaads j
+                ON j.id = p.jugaad_id
+
+            LEFT JOIN conversations c
+                ON c.proposal_id = p.id
+                AND c.jugaad_id = p.jugaad_id
+
+            LEFT JOIN LATERAL (
+                SELECT
+                    amount,
+                    message,
+                    offered_by,
+                    status
+
+                FROM proposal_counter_offers
+
+                WHERE proposal_id = p.id
+
+                ORDER BY
+                    created_at DESC
+
+                LIMIT 1
+            ) co
+                ON TRUE
+
+            WHERE
+                p.jugaad_id = $1
+
+            ORDER BY
+                p.created_at DESC;
+        `;
+
+
+        const {
+            rows
+        } = await pool.query(
+            query,
+            [
+                Number(jugaadId)
+            ]
+        );
+
+
+        // ------------------------------------------------------------
+        // REPAIR OLD ACCEPTED PROPOSALS
+        // ------------------------------------------------------------
+
+        for (
+            const proposal of rows
+        ) {
+
+            const proposalStatus =
+                String(
+                    proposal?.status ||
+                    ''
+                ).toLowerCase();
+
+
+            if (
+                proposalStatus ===
+                    'accepted' &&
+                !proposal?.conversation_id
+            ) {
+
+                try {
+
+                    const conversation =
+                        await ensureConversationForAcceptedProposal(
+                            proposal.id
+                        );
+
+
+                    if (
+                        conversation?.id
+                    ) {
+
+                        proposal.conversation_id =
+                            conversation.id;
+                    }
+
+                } catch (error) {
+
+                    console.error(
+                        `Unable to repair conversation for proposal ${proposal.id}:`,
+                        error
+                    );
+                }
+            }
         }
 
 
-        // ============================================================
-        // 13. COMMIT
-        // ============================================================
+        return rows;
+    };
 
-        await client.query(
-            'COMMIT'
+
+// ================================================================
+// FIND MY PROPOSALS
+// ================================================================
+
+export const findMyProposals =
+    async (
+        helperId
+    ) => {
+
+        const query = `
+            SELECT
+                p.id,
+                p.jugaad_id,
+                p.helper_id,
+
+                p.proposal_message,
+                p.proposed_price,
+                p.estimated_completion,
+
+                p.status,
+                p.created_at,
+                p.updated_at,
+
+                j.title AS jugaad_title,
+                j.budget AS jugaad_budget,
+                j.deadline AS jugaad_deadline,
+                j.status AS jugaad_status,
+
+                poster.name AS poster_name,
+
+                c.id AS conversation_id,
+
+                co.amount AS latest_counter_amount,
+                co.message AS latest_counter_message,
+                co.offered_by AS latest_counter_offered_by
+
+            FROM jugaad_proposals p
+
+            JOIN jugaads j
+                ON j.id = p.jugaad_id
+
+            JOIN users poster
+                ON poster.id = j.poster_id
+
+            LEFT JOIN conversations c
+                ON c.proposal_id = p.id
+                AND c.jugaad_id = p.jugaad_id
+
+            LEFT JOIN LATERAL (
+                SELECT
+                    amount,
+                    message,
+                    offered_by
+
+                FROM proposal_counter_offers
+
+                WHERE proposal_id = p.id
+
+                ORDER BY
+                    created_at DESC
+
+                LIMIT 1
+            ) co
+                ON TRUE
+
+            WHERE p.helper_id = $1
+
+            ORDER BY
+                p.created_at DESC;
+        `;
+
+
+        const {
+            rows
+        } = await pool.query(
+            query,
+            [
+                Number(
+                    helperId
+                )
+            ]
         );
 
 
-        return {
-            proposal:
-                acceptedProposal,
+        return rows;
+    };
 
-            jugaad:
-                updatedJugaad,
 
-            conversation
-        };
+// ================================================================
+// FIND RECEIVED PROPOSALS
+// ================================================================
 
-    } catch (error) {
+export const findReceivedProposals =
+    async (
+        posterId
+    ) => {
 
-        await client.query(
-            'ROLLBACK'
+        const query = `
+            SELECT
+                p.id,
+                p.jugaad_id,
+                p.helper_id,
+
+                p.proposal_message,
+                p.proposed_price,
+                p.estimated_completion,
+
+                p.status,
+                p.created_at,
+                p.updated_at,
+
+                j.title AS jugaad_title,
+                j.status AS jugaad_status,
+
+                helper.name AS helper_name,
+                helper.email AS helper_email,
+                helper.number AS helper_number,
+                helper.location AS helper_location,
+
+                c.id AS conversation_id,
+
+                co.amount AS latest_counter_amount,
+                co.message AS latest_counter_message,
+                co.offered_by AS latest_counter_offered_by
+
+            FROM jugaad_proposals p
+
+            JOIN jugaads j
+                ON j.id = p.jugaad_id
+
+            JOIN users helper
+                ON helper.id = p.helper_id
+
+            LEFT JOIN conversations c
+                ON c.proposal_id = p.id
+                AND c.jugaad_id = p.jugaad_id
+
+            LEFT JOIN LATERAL (
+                SELECT
+                    amount,
+                    message,
+                    offered_by
+
+                FROM proposal_counter_offers
+
+                WHERE proposal_id = p.id
+
+                ORDER BY
+                    created_at DESC
+
+                LIMIT 1
+            ) co
+                ON TRUE
+
+            WHERE j.poster_id = $1
+
+            ORDER BY
+                p.created_at DESC;
+        `;
+
+
+        const {
+            rows
+        } = await pool.query(
+            query,
+            [
+                Number(
+                    posterId
+                )
+            ]
         );
 
-        throw error;
 
-    } finally {
+        return rows;
+    };
 
-        client.release();
-    }
-};
+
+// ================================================================
+// ACCEPT PROPOSAL TRANSACTION
+// ================================================================
+//
+// This creates/unlocks the conversation when a proposal is accepted.
+// ================================================================
+
+export const acceptProposalTransaction =
+    async (
+        proposalId,
+        posterId
+    ) => {
+
+        const client =
+            await pool.connect();
+
+
+        try {
+
+            await client.query(
+                'BEGIN'
+            );
+
+
+            // --------------------------------------------------------
+            // 1. GET PROPOSAL + JUGAAD
+            // --------------------------------------------------------
+
+            const propQuery = `
+                SELECT
+                    p.*,
+
+                    j.poster_id,
+                    j.status AS jugaad_status,
+                    j.title AS jugaad_title
+
+                FROM jugaad_proposals p
+
+                JOIN jugaads j
+                    ON j.id = p.jugaad_id
+
+                WHERE p.id = $1
+
+                FOR UPDATE;
+            `;
+
+
+            const {
+                rows:
+                    propRows
+            } = await client.query(
+                propQuery,
+                [
+                    Number(
+                        proposalId
+                    )
+                ]
+            );
+
+
+            if (
+                propRows.length === 0
+            ) {
+
+                const error =
+                    new Error(
+                        'Proposal not found.'
+                    );
+
+                error.statusCode =
+                    404;
+
+                throw error;
+            }
+
+
+            const proposal =
+                propRows[0];
+
+
+            // --------------------------------------------------------
+            // 2. VERIFY POSTER
+            // --------------------------------------------------------
+
+            if (
+                Number(
+                    proposal.poster_id
+                ) !==
+                Number(posterId)
+            ) {
+
+                const error =
+                    new Error(
+                        'Unauthorized: Only the Jugaad owner can accept proposals.'
+                    );
+
+                error.statusCode =
+                    403;
+
+                throw error;
+            }
+
+
+            // --------------------------------------------------------
+            // 3. PROPOSAL MUST BE PENDING
+            // --------------------------------------------------------
+
+            if (
+                proposal.status !==
+                'pending'
+            ) {
+
+                const error =
+                    new Error(
+                        `Cannot accept proposal with status '${proposal.status}'.`
+                    );
+
+                error.statusCode =
+                    400;
+
+                throw error;
+            }
+
+
+            // --------------------------------------------------------
+            // 4. JUGAAD MUST BE OPEN
+            // --------------------------------------------------------
+
+            if (
+                proposal.jugaad_status !==
+                'open'
+            ) {
+
+                const error =
+                    new Error(
+                        `Cannot accept proposal on a Jugaad that is already '${proposal.jugaad_status}'.`
+                    );
+
+                error.statusCode =
+                    400;
+
+                throw error;
+            }
+
+
+            // --------------------------------------------------------
+            // 5. ACCEPT PROPOSAL
+            // --------------------------------------------------------
+
+            const updateProposalQuery = `
+                UPDATE jugaad_proposals
+
+                SET
+                    status = 'accepted',
+                    updated_at = CURRENT_TIMESTAMP
+
+                WHERE id = $1
+
+                RETURNING *;
+            `;
+
+
+            const {
+                rows:
+                    acceptedProposalRows
+            } = await client.query(
+                updateProposalQuery,
+                [
+                    Number(
+                        proposalId
+                    )
+                ]
+            );
+
+
+            const acceptedProposal =
+                acceptedProposalRows[0];
+
+
+            // --------------------------------------------------------
+            // 6. ASSIGN HELPER TO JUGAAD
+            // --------------------------------------------------------
+
+            const updateJugaadQuery = `
+                UPDATE jugaads
+
+                SET
+                    status = 'assigned',
+                    helper_id = $1,
+                    updated_at = CURRENT_TIMESTAMP
+
+                WHERE id = $2
+
+                RETURNING *;
+            `;
+
+
+            const {
+                rows:
+                    updatedJugaadRows
+            } = await client.query(
+                updateJugaadQuery,
+                [
+                    Number(
+                        proposal.helper_id
+                    ),
+
+                    Number(
+                        proposal.jugaad_id
+                    )
+                ]
+            );
+
+
+            const updatedJugaad =
+                updatedJugaadRows[0];
+
+
+            if (
+                !updatedJugaad
+            ) {
+
+                const error =
+                    new Error(
+                        'Unable to assign helper to the Jugaad.'
+                    );
+
+                error.statusCode =
+                    500;
+
+                throw error;
+            }
+
+
+            // --------------------------------------------------------
+            // 7. REJECT OTHER PENDING PROPOSALS
+            // --------------------------------------------------------
+
+            const rejectOthersQuery = `
+                UPDATE jugaad_proposals
+
+                SET
+                    status = 'rejected',
+                    updated_at = CURRENT_TIMESTAMP
+
+                WHERE jugaad_id = $1
+                  AND id != $2
+                  AND status = 'pending'
+
+                RETURNING
+                    id,
+                    helper_id;
+            `;
+
+
+            const {
+                rows:
+                    rejectedHelpers
+            } = await client.query(
+                rejectOthersQuery,
+                [
+                    Number(
+                        proposal.jugaad_id
+                    ),
+
+                    Number(
+                        proposalId
+                    )
+                ]
+            );
+
+
+            // --------------------------------------------------------
+            // 8. NORMALIZE USER IDS
+            // --------------------------------------------------------
+
+            const firstUserId =
+                Number(
+                    posterId
+                );
+
+
+            const secondUserId =
+                Number(
+                    proposal.helper_id
+                );
+
+
+            if (
+                !Number.isInteger(
+                    firstUserId
+                ) ||
+                !Number.isInteger(
+                    secondUserId
+                )
+            ) {
+
+                const error =
+                    new Error(
+                        'Invalid user ID while creating conversation.'
+                    );
+
+                error.statusCode =
+                    400;
+
+                throw error;
+            }
+
+
+            const userOneId =
+                Math.min(
+                    firstUserId,
+                    secondUserId
+                );
+
+
+            const userTwoId =
+                Math.max(
+                    firstUserId,
+                    secondUserId
+                );
+
+
+            // --------------------------------------------------------
+            // 9. CREATE / REUSE CONVERSATION
+            // --------------------------------------------------------
+
+            const createConversationQuery = `
+                INSERT INTO conversations (
+                    user_one_id,
+                    user_two_id,
+                    jugaad_id,
+                    proposal_id
+                )
+
+                VALUES (
+                    $1,
+                    $2,
+                    $3,
+                    $4
+                )
+
+                ON CONFLICT (
+                    user_one_id,
+                    user_two_id
+                )
+
+                DO UPDATE SET
+                    jugaad_id =
+                        EXCLUDED.jugaad_id,
+
+                    proposal_id =
+                        EXCLUDED.proposal_id
+
+                RETURNING *;
+            `;
+
+
+            const {
+                rows:
+                    conversationRows
+            } = await client.query(
+                createConversationQuery,
+                [
+                    userOneId,
+                    userTwoId,
+
+                    Number(
+                        proposal.jugaad_id
+                    ),
+
+                    Number(
+                        proposalId
+                    )
+                ]
+            );
+
+
+            const conversation =
+                conversationRows[0];
+
+
+            if (
+                !conversation
+            ) {
+
+                const error =
+                    new Error(
+                        'Unable to create or reuse conversation.'
+                    );
+
+                error.statusCode =
+                    500;
+
+                throw error;
+            }
+
+
+            // --------------------------------------------------------
+            // 10. ADD BOTH PARTICIPANTS
+            // --------------------------------------------------------
+
+            const addParticipantsQuery = `
+                INSERT INTO conversation_participants (
+                    conversation_id,
+                    user_id
+                )
+
+                VALUES
+                    ($1, $2),
+                    ($1, $3)
+
+                ON CONFLICT (
+                    conversation_id,
+                    user_id
+                )
+
+                DO NOTHING;
+            `;
+
+
+            await client.query(
+                addParticipantsQuery,
+                [
+                    Number(
+                        conversation.id
+                    ),
+
+                    firstUserId,
+                    secondUserId
+                ]
+            );
+
+
+            // --------------------------------------------------------
+            // 11. ADD ORIGINAL PROPOSAL MESSAGE
+            // --------------------------------------------------------
+            //
+            // Add it only if this conversation has no messages.
+            // --------------------------------------------------------
+
+            const messageCheckQuery = `
+                SELECT id
+
+                FROM messages
+
+                WHERE conversation_id = $1
+
+                LIMIT 1;
+            `;
+
+
+            const {
+                rows:
+                    messageRows
+            } = await client.query(
+                messageCheckQuery,
+                [
+                    Number(
+                        conversation.id
+                    )
+                ]
+            );
+
+
+            if (
+                messageRows.length === 0 &&
+                proposal.proposal_message
+            ) {
+
+                const messageQuery = `
+                    INSERT INTO messages (
+                        conversation_id,
+                        sender_id,
+                        content
+                    )
+
+                    VALUES (
+                        $1,
+                        $2,
+                        $3
+                    )
+
+                    RETURNING id;
+                `;
+
+
+                await client.query(
+                    messageQuery,
+                    [
+                        Number(
+                            conversation.id
+                        ),
+
+                        secondUserId,
+
+                        proposal.proposal_message
+                    ]
+                );
+            }
+
+
+            // --------------------------------------------------------
+            // 12. NOTIFY ACCEPTED HELPER
+            // --------------------------------------------------------
+
+            const acceptedNotificationEnabled =
+                await notificationRepository
+                    .isNotificationTypeEnabled(
+                        secondUserId,
+                        'accepted_proposal_notifications'
+                    );
+
+
+            if (
+                acceptedNotificationEnabled
+            ) {
+
+                await notificationRepository
+                    .createNotification({
+                        userId:
+                            secondUserId,
+
+                        type:
+                            'PROPOSAL_ACCEPTED',
+
+                        title:
+                            'Proposal Accepted!',
+
+                        message:
+                            `Congratulations! Your proposal for "${proposal.jugaad_title}" has been accepted. Conversation is now unlocked!`,
+
+                        referenceType:
+                            'jugaad',
+
+                        referenceId:
+                            Number(
+                                proposal.jugaad_id
+                            ),
+
+                        client
+                    });
+            }
+
+
+            // --------------------------------------------------------
+            // 13. NOTIFY REJECTED HELPERS
+            // --------------------------------------------------------
+
+            for (
+                const rejected
+                of rejectedHelpers
+            ) {
+
+                const notifyRejectedQuery = `
+                    INSERT INTO notifications (
+                        user_id,
+                        type,
+                        title,
+                        message,
+                        reference_type,
+                        reference_id
+                    )
+
+                    VALUES (
+                        $1,
+                        'PROPOSAL_REJECTED',
+                        'Proposal Update',
+                        $2,
+                        'jugaad',
+                        $3
+                    );
+                `;
+
+
+                await client.query(
+                    notifyRejectedQuery,
+                    [
+                        Number(
+                            rejected.helper_id
+                        ),
+
+                        `Your proposal for "${proposal.jugaad_title}" was not selected as another proposal was accepted.`,
+
+                        Number(
+                            proposal.jugaad_id
+                        )
+                    ]
+                );
+            }
+
+
+            // --------------------------------------------------------
+            // 14. COMMIT
+            // --------------------------------------------------------
+
+            await client.query(
+                'COMMIT'
+            );
+
+
+            return {
+                proposal:
+                    acceptedProposal,
+
+                jugaad:
+                    updatedJugaad,
+
+                conversation
+            };
+
+
+        } catch (error) {
+
+            await client.query(
+                'ROLLBACK'
+            );
+
+            throw error;
+
+
+        } finally {
+
+            client.release();
+        }
+    };
 
 
 // ================================================================
@@ -1169,8 +1495,13 @@ export const rejectProposal = async (
     } = await pool.query(
         query,
         [
-            Number(proposalId),
-            Number(posterId)
+            Number(
+                proposalId
+            ),
+
+            Number(
+                posterId
+            )
         ]
     );
 
@@ -1214,8 +1545,13 @@ export const withdrawProposal = async (
     } = await pool.query(
         query,
         [
-            Number(proposalId),
-            Number(helperId)
+            Number(
+                proposalId
+            ),
+
+            Number(
+                helperId
+            )
         ]
     );
 
@@ -1235,6 +1571,8 @@ export const createCounterOffer = async ({
     message = null
 }) => {
 
+    // Mark previous pending counter offers as countered
+
     await pool.query(
         `
             UPDATE proposal_counter_offers
@@ -1246,7 +1584,9 @@ export const createCounterOffer = async ({
               AND status = 'pending';
         `,
         [
-            Number(proposalId)
+            Number(
+                proposalId
+            )
         ]
     );
 
@@ -1277,9 +1617,18 @@ export const createCounterOffer = async ({
     } = await pool.query(
         query,
         [
-            Number(proposalId),
-            Number(offeredBy),
-            Number(amount),
+            Number(
+                proposalId
+            ),
+
+            Number(
+                offeredBy
+            ),
+
+            Number(
+                amount
+            ),
+
             message
         ]
     );
@@ -1293,37 +1642,39 @@ export const createCounterOffer = async ({
 // FIND COUNTER OFFERS
 // ================================================================
 
-export const findCounterOffersByProposalId = async (
-    proposalId
-) => {
+export const findCounterOffersByProposalId =
+    async (
+        proposalId
+    ) => {
 
-    const query = `
-        SELECT
-            co.*,
+        const query = `
+            SELECT
+                co.*,
+                u.name AS offered_by_name
 
-            u.name AS offered_by_name
+            FROM proposal_counter_offers co
 
-        FROM proposal_counter_offers co
+            JOIN users u
+                ON u.id = co.offered_by
 
-        JOIN users u
-            ON u.id = co.offered_by
+            WHERE co.proposal_id = $1
 
-        WHERE co.proposal_id = $1
-
-        ORDER BY
-            co.created_at ASC;
-    `;
-
-
-    const {
-        rows
-    } = await pool.query(
-        query,
-        [
-            Number(proposalId)
-        ]
-    );
+            ORDER BY
+                co.created_at ASC;
+        `;
 
 
-    return rows;
-};
+        const {
+            rows
+        } = await pool.query(
+            query,
+            [
+                Number(
+                    proposalId
+                )
+            ]
+        );
+
+
+        return rows;
+    };
