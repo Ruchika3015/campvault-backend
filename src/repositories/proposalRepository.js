@@ -106,17 +106,54 @@ export const findProposalById = async (
             ON poster.id = j.poster_id
 
         /*
-         * IMPORTANT FIX:
+         * First look for the exact conversation belonging
+         * to this exact proposal and Jugaad.
          *
-         * A conversation belongs to the exact proposal
-         * and exact Jugaad.
-         *
-         * Do not search only by the user pair because the
-         * same two students can interact on multiple Jugaads.
+         * Older conversations may not have proposal_id,
+         * so a fallback is also allowed.
          */
-        LEFT JOIN conversations c
-            ON c.proposal_id = p.id
-            AND c.jugaad_id = p.jugaad_id
+        LEFT JOIN LATERAL (
+            SELECT
+                c.id,
+                c.proposal_id,
+                c.jugaad_id
+
+            FROM conversations c
+
+            WHERE
+                (
+                    c.proposal_id = p.id
+                    AND c.jugaad_id = p.jugaad_id
+                )
+
+                OR
+
+                (
+                    c.proposal_id IS NULL
+                    AND c.jugaad_id = p.jugaad_id
+                    AND c.user_one_id =
+                        LEAST(
+                            j.poster_id,
+                            p.helper_id
+                        )
+                    AND c.user_two_id =
+                        GREATEST(
+                            j.poster_id,
+                            p.helper_id
+                        )
+                )
+
+            ORDER BY
+                CASE
+                    WHEN c.proposal_id = p.id
+                        THEN 0
+                    ELSE 1
+                END,
+
+                c.id DESC
+
+            LIMIT 1
+        ) c ON TRUE
 
         WHERE p.id = $1
 
@@ -127,7 +164,9 @@ export const findProposalById = async (
         rows
     } = await pool.query(
         query,
-        [Number(id)]
+        [
+            Number(id)
+        ]
     );
 
     return rows[0] || null;
@@ -170,6 +209,17 @@ export const findProposalByJugaadAndHelper = async (
 // ================================================================
 // FIND PROPOSALS FOR A JUGAAD
 // ================================================================
+//
+// This is the important function for:
+// My Jugaads → Open a Jugaad → Proposals Received
+//
+// It returns:
+// - helper_name
+// - proposal status
+// - proposed price
+// - conversation_id
+// - latest counter offer
+// ================================================================
 
 export const findProposalsByJugaadId = async (
     jugaadId
@@ -193,8 +243,7 @@ export const findProposalsByJugaadId = async (
             helper.location AS helper_location,
 
             /*
-             * IMPORTANT FIX:
-             * Return the conversation for THIS proposal.
+             * Exact conversation for this proposal.
              */
             c.id AS conversation_id,
 
@@ -211,9 +260,56 @@ export const findProposalsByJugaadId = async (
         JOIN jugaads j
             ON j.id = p.jugaad_id
 
-        LEFT JOIN conversations c
-            ON c.proposal_id = p.id
-            AND c.jugaad_id = p.jugaad_id
+        /*
+         * IMPORTANT:
+         *
+         * Match the exact proposal conversation first.
+         *
+         * If an older row has no proposal_id,
+         * use the old user-pair conversation as fallback.
+         */
+        LEFT JOIN LATERAL (
+            SELECT
+                c.id,
+                c.proposal_id,
+                c.jugaad_id
+
+            FROM conversations c
+
+            WHERE
+                (
+                    c.proposal_id = p.id
+                    AND c.jugaad_id = p.jugaad_id
+                )
+
+                OR
+
+                (
+                    c.proposal_id IS NULL
+                    AND c.jugaad_id = p.jugaad_id
+                    AND c.user_one_id =
+                        LEAST(
+                            j.poster_id,
+                            p.helper_id
+                        )
+                    AND c.user_two_id =
+                        GREATEST(
+                            j.poster_id,
+                            p.helper_id
+                        )
+                )
+
+            ORDER BY
+                CASE
+                    WHEN c.proposal_id = p.id
+                        THEN 0
+                    ELSE 1
+                END,
+
+                c.id DESC
+
+            LIMIT 1
+        ) c ON TRUE
 
         LEFT JOIN LATERAL (
             SELECT
@@ -242,7 +338,9 @@ export const findProposalsByJugaadId = async (
         rows
     } = await pool.query(
         query,
-        [Number(jugaadId)]
+        [
+            Number(jugaadId)
+        ]
     );
 
     return rows;
@@ -251,6 +349,8 @@ export const findProposalsByJugaadId = async (
 
 // ================================================================
 // FIND MY PROPOSALS
+// ================================================================
+// These are proposals submitted by the current student.
 // ================================================================
 
 export const findMyProposals = async (
@@ -276,10 +376,6 @@ export const findMyProposals = async (
 
             poster.name AS poster_name,
 
-            /*
-             * IMPORTANT FIX:
-             * Return the conversation for THIS proposal.
-             */
             c.id AS conversation_id,
 
             co.amount AS latest_counter_amount,
@@ -294,9 +390,48 @@ export const findMyProposals = async (
         JOIN users poster
             ON poster.id = j.poster_id
 
-        LEFT JOIN conversations c
-            ON c.proposal_id = p.id
-            AND c.jugaad_id = p.jugaad_id
+        LEFT JOIN LATERAL (
+            SELECT
+                c.id,
+                c.proposal_id,
+                c.jugaad_id
+
+            FROM conversations c
+
+            WHERE
+                (
+                    c.proposal_id = p.id
+                    AND c.jugaad_id = p.jugaad_id
+                )
+
+                OR
+
+                (
+                    c.proposal_id IS NULL
+                    AND c.jugaad_id = p.jugaad_id
+                    AND c.user_one_id =
+                        LEAST(
+                            j.poster_id,
+                            p.helper_id
+                        )
+                    AND c.user_two_id =
+                        GREATEST(
+                            j.poster_id,
+                            p.helper_id
+                        )
+                )
+
+            ORDER BY
+                CASE
+                    WHEN c.proposal_id = p.id
+                        THEN 0
+                    ELSE 1
+                END,
+
+                c.id DESC
+
+            LIMIT 1
+        ) c ON TRUE
 
         LEFT JOIN LATERAL (
             SELECT
@@ -324,7 +459,9 @@ export const findMyProposals = async (
         rows
     } = await pool.query(
         query,
-        [Number(helperId)]
+        [
+            Number(helperId)
+        ]
     );
 
     return rows;
@@ -333,6 +470,9 @@ export const findMyProposals = async (
 
 // ================================================================
 // FIND RECEIVED PROPOSALS
+// ================================================================
+//
+// This is used for proposal lists received by the Jugaad owner.
 // ================================================================
 
 export const findReceivedProposals = async (
@@ -359,11 +499,6 @@ export const findReceivedProposals = async (
             helper.number AS helper_number,
             helper.location AS helper_location,
 
-            /*
-             * IMPORTANT FIX:
-             * Return the exact conversation belonging
-             * to this proposal.
-             */
             c.id AS conversation_id,
 
             co.amount AS latest_counter_amount,
@@ -378,9 +513,48 @@ export const findReceivedProposals = async (
         JOIN users helper
             ON helper.id = p.helper_id
 
-        LEFT JOIN conversations c
-            ON c.proposal_id = p.id
-            AND c.jugaad_id = p.jugaad_id
+        LEFT JOIN LATERAL (
+            SELECT
+                c.id,
+                c.proposal_id,
+                c.jugaad_id
+
+            FROM conversations c
+
+            WHERE
+                (
+                    c.proposal_id = p.id
+                    AND c.jugaad_id = p.jugaad_id
+                )
+
+                OR
+
+                (
+                    c.proposal_id IS NULL
+                    AND c.jugaad_id = p.jugaad_id
+                    AND c.user_one_id =
+                        LEAST(
+                            j.poster_id,
+                            p.helper_id
+                        )
+                    AND c.user_two_id =
+                        GREATEST(
+                            j.poster_id,
+                            p.helper_id
+                        )
+                )
+
+            ORDER BY
+                CASE
+                    WHEN c.proposal_id = p.id
+                        THEN 0
+                    ELSE 1
+                END,
+
+                c.id DESC
+
+            LIMIT 1
+        ) c ON TRUE
 
         LEFT JOIN LATERAL (
             SELECT
@@ -408,7 +582,9 @@ export const findReceivedProposals = async (
         rows
     } = await pool.query(
         query,
-        [Number(posterId)]
+        [
+            Number(posterId)
+        ]
     );
 
     return rows;
@@ -469,7 +645,9 @@ export const acceptProposalTransaction = async (
             rows: propRows
         } = await client.query(
             propQuery,
-            [Number(proposalId)]
+            [
+                Number(proposalId)
+            ]
         );
 
 
@@ -575,7 +753,9 @@ export const acceptProposalTransaction = async (
                 acceptedProposalRows
         } = await client.query(
             updateProposalQuery,
-            [Number(proposalId)]
+            [
+                Number(proposalId)
+            ]
         );
 
 
@@ -674,7 +854,7 @@ export const acceptProposalTransaction = async (
 
 
         // ============================================================
-        // 8. NORMALIZE USER IDS
+        // 8. NORMALIZE USER PAIR
         // ============================================================
 
         const firstUserId =
@@ -724,13 +904,6 @@ export const acceptProposalTransaction = async (
         // 9. CREATE OR REUSE ONE CONVERSATION
         // ============================================================
 
-        /*
-         * Keep the existing user-pair uniqueness used by your
-         * conversations table.
-         *
-         * When an existing pair is found, update that conversation
-         * so it points to the accepted Jugaad + proposal.
-         */
         const createConversationQuery = `
             INSERT INTO conversations (
                 user_one_id,
@@ -1062,10 +1235,6 @@ export const createCounterOffer = async ({
     message = null
 }) => {
 
-    // ------------------------------------------------------------
-    // Mark previous pending counter offers as countered
-    // ------------------------------------------------------------
-
     await pool.query(
         `
             UPDATE proposal_counter_offers
@@ -1081,10 +1250,6 @@ export const createCounterOffer = async ({
         ]
     );
 
-
-    // ------------------------------------------------------------
-    // Create new counter offer
-    // ------------------------------------------------------------
 
     const query = `
         INSERT INTO proposal_counter_offers (
